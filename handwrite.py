@@ -15,17 +15,19 @@ CONFIG_FRONT = {
     "right_margin": 130,      # 右边距
     "bottom_margin": 150,     # 底部留白
     
-    # 会议元数据坐标配置 (x, y)
-    # 请根据实际图片的表头位置调整这些坐标
+    # 会议元数据坐标配置：每个字段为独立矩形区域 (x, y, width, height)
+    # x, y: 字段起始坐标
+    # width: 字段区域宽度（超出自动换行）
+    # height: 字段区域高度（超出自动截断）
     "meta_position": {
-        "year": [818, 133   ],           # 年
-        "month": [910, 138],          # 月  
-        "day": [985, 138],            # 日
-        "location": [587, 235],       # 地点位置 (假设位置)
-        "subject": [303, 351],        # 会议名称
-        "note_taker": [888, 355],     # 记录人
-        "chairperson": [900, 273],    # 主持人 (假设位置)
-        "attendees": [309, 450]       # 出席人
+        "year":        {"x": 818, "y": 133, "width": 80,  "height": 50},   # 年
+        "month":       {"x": 910, "y": 138, "width": 70,  "height": 50},   # 月
+        "day":         {"x": 985, "y": 138, "width": 70,  "height": 50},  # 日
+        "location":    {"x": 587, "y": 235, "width": 300, "height": 80},   # 地点
+        "subject":     {"x": 303, "y": 351, "width": 700, "height": 120},  # 会议名称
+        "note_taker":  {"x": 888, "y": 355, "width": 200, "height": 80},   # 记录人
+        "chairperson": {"x": 900, "y": 273, "width": 200, "height": 80},   # 主持人
+        "attendees":   {"x": 309, "y": 450, "width": 800, "height": 150},  # 出席人
     }
 }
 
@@ -139,43 +141,61 @@ class HandWriter:
 
     def write_meta(self, meta_data):
         """
-        【新增功能】写会议元信息
-        meta_data: 字典，包含需要填写的字段和内容
+        写会议元信息，每个字段限制在独立矩形区域内。
+        超出宽度自动换行，超出高度自动截断。
         """
-        # 确保只在第一页写 (pages列表为空说明当前是第0张刚初始化完)
+        # 确保只在第一页写
         if len(self.pages) > 0:
             print("警告：尝试在非第一页写入元数据，已跳过。")
             return
 
         positions = self.config_front.get("meta_position", {})
-
         print("正在写入元数据...")
-        
+
         for key, text in meta_data.items():
             if key not in positions:
-                continue # 如果配置里没这个位置，就跳过
-            
-            # 获取该字段的起始坐标
-            start_x, start_y = positions[key]
-            
-            # 使用临时光标，不影响正文光标 cursor_x/y
-            local_cursor_x = start_x
-            
+                continue
+
+            cfg = positions[key]
+            # 每个字段独立的行光标
+            local_x = cfg["x"]
+            local_y = cfg["y"]
+            box_right = cfg["x"] + cfg["width"]
+            box_bottom = cfg["y"] + cfg["height"]
+
             for char in text:
+                # 换行符：强制换行
+                if char == '\n':
+                    local_x = cfg["x"]
+                    local_y += self.line_height
+                    continue
+
                 font = self.get_random_font()
                 char_img, char_w = self.draw_char_image(char, font)
-                
-                # 上下轻微抖动
+
+                # 字实际占宽 = 字宽 * 字距系数 + 随机抖动
+                kerning_factor = 0.75
+                actual_width = int(char_w * kerning_factor) + random.randint(-1, 2)
+
+                # 超出该字段右边界 → 换到下一行
+                if local_x + actual_width > box_right:
+                    local_x = cfg["x"]
+                    local_y += self.line_height
+
+                # 超出该字段下边界 → 截断，停止该字段
+                if local_y + self.line_height > box_bottom:
+                    print(f"  字段 [{key}] 内容过长，已截断。")
+                    break
+
+                # 上下抖动 + 基线偏移
                 offset_y = random.randint(-2, 2)
-                paste_y = start_y + offset_y - int(self.base_size * 0.3)
-                
-                # 粘贴文字
-                self.current_image.paste(char_img, (local_cursor_x, paste_y), char_img)
-                
-                # 计算下一个字的位置 (简单横向排列)
-                kerning_factor = 0.75 
-                move_distance = int(char_w * kerning_factor) + random.randint(-1, 2)
-                local_cursor_x += move_distance
+                paste_y = local_y + offset_y - int(self.base_size * 0.3)
+
+                # 粘贴
+                self.current_image.paste(char_img, (local_x, paste_y), char_img)
+
+                local_x += actual_width
+
 
     def write_text(self, text):
         """写正文内容"""
@@ -276,7 +296,7 @@ if __name__ == "__main__":
     
     # 2. 读取外部文件
     print("正在读取 content.txt ...")
-    content = load_content("content.txt")  * 3
+    content = load_content("content.txt")
     
     print("正在读取 meta.txt ...")
     meta_info = load_meta("meta.txt")
