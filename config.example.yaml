@@ -10,10 +10,10 @@ meta:
   year: "2025"
   month: "11"
   day: "23"
-  location: "会议室A"
-  subject: "关于2025年第三季度项目进度总结会议"
+  venue: "会议室A"
+  meeting_title: "关于2025年第三季度项目进度总结会议"
   chairperson: "张三"
-  note_taker: "李四"
+  recorder: "李四"
   attendees: "王五，赵六"
 
 # 正文内容：两种方式

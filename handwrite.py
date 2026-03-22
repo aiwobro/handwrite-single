@@ -22,14 +22,14 @@ CONFIG_FRONT = {
 
     # 会议元数据坐标配置：每个字段为独立矩形区域 (x, y, width, height)
     "meta_position": {
-        "year":        {"x": 818, "y": 133, "width": 80,  "height": 50},
-        "month":       {"x": 910, "y": 138, "width": 70,  "height": 50},
-        "day":         {"x": 985, "y": 138, "width": 70,  "height": 50},
-        "location":    {"x": 587, "y": 235, "width": 300, "height": 80},
-        "subject":     {"x": 303, "y": 351, "width": 700, "height": 120},
-        "note_taker":  {"x": 888, "y": 355, "width": 200, "height": 80},
-        "chairperson": {"x": 900, "y": 273, "width": 200, "height": 80},
-        "attendees":   {"x": 309, "y": 450, "width": 800, "height": 150},
+        "year":          {"x": 818, "y": 133, "width": 80,  "height": 50},
+        "month":         {"x": 910, "y": 138, "width": 70,  "height": 50},
+        "day":           {"x": 985, "y": 138, "width": 70,  "height": 50},
+        "venue":         {"x": 587, "y": 235, "width": 300, "height": 80},
+        "meeting_title": {"x": 303, "y": 351, "width": 700, "height": 120},
+        "recorder":      {"x": 888, "y": 355, "width": 200, "height": 80},
+        "chairperson":   {"x": 900, "y": 273, "width": 200, "height": 80},
+        "attendees":     {"x": 309, "y": 450, "width": 800, "height": 150},
     }
 }
 
