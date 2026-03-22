@@ -69,7 +69,7 @@ class HandWriter:
         self.bottom_punct = {'，', '。', '、', '；'}
 
         # 横线类符号：字高极小，按原公式会掉到行底，需要少提一些
-        self.horizontal_chars = {'—', '－', '-'}
+        self.horizontal_chars = {'—', '－', '-', '一'}
 
         # 初始化第一页
         self._load_new_page()
@@ -185,7 +185,7 @@ class HandWriter:
                 offset_y = random.randint(-2, 2)
 
                 if char in self.horizontal_chars:
-                    paste_y = local_y + int(self.base_size * 0.3)
+                    paste_y = local_y + int(self.base_size * 0.3) + offset_y
                 elif char in self.bottom_punct:
                     paste_y = local_y + offset_y - int(self.base_size * 0.3)
                     paste_y -= random.randint(12, 18)
