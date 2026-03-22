@@ -65,8 +65,11 @@ class HandWriter:
         self.margin_right = 0
         self.margin_left = 0
 
-        # 句号逗号顿号分号：字形小且书写靠下，旋转后容易下垂，单独处理
+        # 句号逗号顿号分号：字形小且书写靠下，旋转后容易下垂，额外上移
         self.bottom_punct = {'，', '。', '、', '；'}
+
+        # 横线类符号：字高极小，按原公式会掉到行底，需要少提一些
+        self.horizontal_chars = {'—', '－', '-'}
 
         # 初始化第一页
         self._load_new_page()
@@ -180,11 +183,15 @@ class HandWriter:
                     break
 
                 offset_y = random.randint(-2, 2)
-                paste_y = local_y + offset_y - int(self.base_size * 0.3)
 
-                # 句号逗号等小标点旋转后容易下垂，额外上移一点
-                if char in self.bottom_punct:
+                if char in self.horizontal_chars:
+                    # 横线类字高极小，少提一些，避免掉到行底
+                    paste_y = local_y + offset_y - int(self.base_size * 0.1)
+                elif char in self.bottom_punct:
+                    paste_y = local_y + offset_y - int(self.base_size * 0.3)
                     paste_y -= random.randint(12, 18)
+                else:
+                    paste_y = local_y + offset_y - int(self.base_size * 0.3)
 
                 self.current_image.paste(char_img, (local_x, paste_y), char_img)
 
@@ -210,11 +217,14 @@ class HandWriter:
             char_img, char_w = self.draw_char_image(char, font)
 
             offset_y = random.randint(-3, 3)
-            paste_y = self.cursor_y + offset_y - int(self.base_size * 0.3)
 
-            # 句号逗号等小标点旋转后容易下垂，额外上移一点
-            if char in self.bottom_punct:
+            if char in self.horizontal_chars:
+                paste_y = self.cursor_y + offset_y - int(self.base_size * 0.1)
+            elif char in self.bottom_punct:
+                paste_y = self.cursor_y + offset_y - int(self.base_size * 0.3)
                 paste_y -= random.randint(12, 18)
+            else:
+                paste_y = self.cursor_y + offset_y - int(self.base_size * 0.3)
 
             self.current_image.paste(char_img, (self.cursor_x, paste_y), char_img)
 
