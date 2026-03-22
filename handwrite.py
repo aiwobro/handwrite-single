@@ -171,7 +171,7 @@ class HandWriter:
                 font = self.get_random_font()
                 char_img, char_w = self.draw_char_image(char, font)
 
-                kerning_factor = 0.75
+                kerning_factor = 0.76
                 actual_width = int(char_w * kerning_factor) + random.randint(-1, 2)
 
                 if local_x + actual_width > box_right:
@@ -229,7 +229,7 @@ class HandWriter:
 
             self.current_image.paste(char_img, (self.cursor_x, paste_y), char_img)
 
-            kerning_factor = 0.70
+            kerning_factor = 0.76
             random_jitter = random.randint(-3, 3)
             move_distance = int(char_w * kerning_factor) + random_jitter
             self.cursor_x += move_distance
