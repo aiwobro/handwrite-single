@@ -185,8 +185,9 @@ class HandWriter:
                 offset_y = random.randint(-2, 2)
 
                 if char in self.horizontal_chars:
-                    # 横线类字高极小，不上移，让它贴近基线中部
-                    paste_y = local_y + int(self.base_size * 0.15) + offset_y
+                    # 横线类字高极小，要让视觉中心和正常字对齐
+                    # 正常字中心在 cursor_y+base_size*0.2，破折号也要对准这个位置
+                    paste_y = local_y + int(self.base_size * 0.2)
                 elif char in self.bottom_punct:
                     paste_y = local_y + offset_y - int(self.base_size * 0.3)
                     paste_y -= random.randint(12, 18)
@@ -219,7 +220,7 @@ class HandWriter:
             offset_y = random.randint(-3, 3)
 
             if char in self.horizontal_chars:
-                paste_y = self.cursor_y + int(self.base_size * 0.15) + offset_y
+                paste_y = self.cursor_y + int(self.base_size * 0.2) + offset_y
             elif char in self.bottom_punct:
                 paste_y = self.cursor_y + offset_y - int(self.base_size * 0.3)
                 paste_y -= random.randint(12, 18)
