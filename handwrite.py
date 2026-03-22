@@ -186,7 +186,7 @@ class HandWriter:
 
                 if char in self.horizontal_chars:
                     paste_y = local_y + offset_y - int(self.base_size * 0.3)
-                    paste_y -= random.randint(12, 18)
+                    paste_y -= random.randint(12, 15)
                 elif char in self.bottom_punct:
                     paste_y = local_y + offset_y - int(self.base_size * 0.3)
                     paste_y -= random.randint(12, 18)
@@ -220,7 +220,7 @@ class HandWriter:
 
             if char in self.horizontal_chars:
                 paste_y = self.cursor_y + offset_y - int(self.base_size * 0.3)
-                paste_y -= random.randint(12, 18)
+                paste_y -= random.randint(12, 15)
             elif char in self.bottom_punct:
                 paste_y = self.cursor_y + offset_y - int(self.base_size * 0.3)
                 paste_y -= random.randint(12, 18)
