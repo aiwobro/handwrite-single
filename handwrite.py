@@ -184,7 +184,7 @@ class HandWriter:
 
                 # 句号逗号等小标点旋转后容易下垂，额外上移一点
                 if char in self.bottom_punct:
-                    paste_y -= random.randint(8, 12)
+                    paste_y -= random.randint(12, 18)
 
                 self.current_image.paste(char_img, (local_x, paste_y), char_img)
 
