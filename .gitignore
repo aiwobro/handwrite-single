@@ -1,0 +1,15 @@
+# 输出目录
+output/
+
+# 用户配置文件（模板用 config.example.yaml）
+config.yaml
+
+# 背景图（用户自己准备）
+page*.jpg
+
+# Python
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store
