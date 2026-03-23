@@ -39,6 +39,9 @@ cp config.example.yaml config.yaml
 python handwrite.py                    # 使用默认 config.yaml
 python handwrite.py -c my.yaml          # 指定其他配置文件
 python handwrite.py --meta-only         # 仅写入元数据（预览用）
+python handwrite.py --check-config      # 仅检查配置与资源，不生成图片
+python handwrite.py --debug-box         # 输出图片附带布局调试框
+python handwrite.py --seed 42           # 固定随机种子，结果可复现
 
 # 如果你在 conda 环境中，也可用：
 conda run -n <你的环境名> python handwrite.py -c config.yaml
@@ -47,6 +50,12 @@ conda run -n <你的环境名> python handwrite.py -c config.yaml
 ### 3. 输出
 
 生成的图片保存在 `./output/` 目录下。
+
+## 常用参数
+
+- `--check-config`：运行前检查字体、背景图、正文来源、布局范围等配置问题。
+- `--debug-box`：在页面中绘制正文区域、基线和首页元数据框，便于快速调坐标。
+- `--seed <int>`：设置随机种子，保证同一输入可复现相同风格输出。
 
 ## 标点排版规则说明
 
