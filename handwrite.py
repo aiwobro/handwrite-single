@@ -263,6 +263,8 @@ class HandWriter:
 
         positions = self.config_front.get("meta_position", {})
         print("正在写入元数据...")
+        # 这些字段通常不涉及标点禁则，保持原有逐字逻辑
+        simple_fields = {"year", "month", "day", "chairperson", "recorder"}
 
         for key, text in meta_data.items():
             if key not in positions:
@@ -274,40 +276,131 @@ class HandWriter:
             box_right = cfg["x"] + cfg["width"]
             box_bottom = cfg["y"] + cfg["height"]
 
-            for char in text:
-                if char == '\n':
-                    local_x = cfg["x"]
-                    local_y += self.line_height
-                    continue
+            if key in simple_fields:
+                for char in text:
+                    if char == '\n':
+                        local_x = cfg["x"]
+                        local_y += self.line_height
+                        continue
 
-                font = self.get_random_font()
-                char_img, char_w = self.draw_char_image(char, font)
+                    font = self.get_random_font()
+                    char_img, char_w = self.draw_char_image(char, font)
 
-                kerning_factor = 0.76
-                actual_width = int(char_w * kerning_factor) + random.randint(-1, 2)
+                    kerning_factor = 0.76
+                    actual_width = int(char_w * kerning_factor) + random.randint(-1, 2)
 
-                if local_x + actual_width > box_right:
-                    local_x = cfg["x"]
-                    local_y += self.line_height
+                    if local_x + actual_width > box_right:
+                        local_x = cfg["x"]
+                        local_y += self.line_height
+
+                    if local_y + self.line_height > box_bottom:
+                        print(f"  字段 [{key}] 内容过长，已截断。")
+                        break
+
+                    offset_y = random.randint(-2, 2)
+
+                    if char in self.horizontal_chars:
+                        paste_y = local_y + offset_y - int(self.base_size * 0.3)
+                        paste_y -= random.randint(12, 15)
+                    elif char in self.bottom_punct:
+                        paste_y = local_y + offset_y - int(self.base_size * 0.3)
+                        paste_y -= random.randint(12, 18)
+                    else:
+                        paste_y = local_y + offset_y - int(self.base_size * 0.3)
+
+                    self.current_image.paste(char_img, (local_x, paste_y), char_img)
+
+                    local_x += actual_width
+                continue
+
+            # 其余字段应用与正文一致的基础标点禁则断行
+            max_line_width = cfg["width"]
+            line_tokens = []
+            line_width = 0
+            truncated = False
+
+            def flush_meta_line():
+                nonlocal local_y, line_tokens, line_width, truncated
+                if truncated:
+                    return
 
                 if local_y + self.line_height > box_bottom:
+                    truncated = True
                     print(f"  字段 [{key}] 内容过长，已截断。")
+                    return
+
+                x = cfg["x"]
+                for token in line_tokens:
+                    for glyph in token["glyphs"]:
+                        char = glyph["char"]
+                        paste_y = self._char_paste_y(char, local_y)
+                        self.current_image.paste(glyph["img"], (x, paste_y), glyph["img"])
+                        x += glyph["advance"]
+
+                line_tokens = []
+                line_width = 0
+                local_y += self.line_height
+
+            tokens = self._tokenize_text(text)
+            for char in tokens:
+                if truncated:
                     break
 
-                offset_y = random.randint(-2, 2)
+                if char == '\n':
+                    if line_tokens:
+                        flush_meta_line()
+                    else:
+                        # 空行：直接下移一行
+                        if local_y + self.line_height > box_bottom:
+                            truncated = True
+                            print(f"  字段 [{key}] 内容过长，已截断。")
+                        else:
+                            local_y += self.line_height
+                    continue
 
-                if char in self.horizontal_chars:
-                    paste_y = local_y + offset_y - int(self.base_size * 0.3)
-                    paste_y -= random.randint(12, 15)
-                elif char in self.bottom_punct:
-                    paste_y = local_y + offset_y - int(self.base_size * 0.3)
-                    paste_y -= random.randint(12, 18)
-                else:
-                    paste_y = local_y + offset_y - int(self.base_size * 0.3)
+                token = self._build_token(char)
 
-                self.current_image.paste(char_img, (local_x, paste_y), char_img)
+                if line_width + token["width"] <= max_line_width:
+                    line_tokens.append(token)
+                    line_width += token["width"]
+                    continue
 
-                local_x += actual_width
+                if not line_tokens:
+                    # 单个 token 过宽：兜底直接占一行，避免死循环
+                    line_tokens.append(token)
+                    line_width += token["width"]
+                    flush_meta_line()
+                    continue
+
+                combined = line_tokens + [token]
+                break_pos = self._find_break_pos(combined)
+
+                current_line = combined[:break_pos]
+                carry_line = combined[break_pos:]
+
+                line_tokens = current_line
+                line_width = sum(t["width"] for t in line_tokens)
+                flush_meta_line()
+
+                if truncated:
+                    break
+
+                line_tokens = carry_line
+                line_width = sum(t["width"] for t in line_tokens)
+
+                while line_tokens and (line_width > max_line_width):
+                    first = line_tokens[0]
+                    line_tokens = [first]
+                    line_width = first["width"]
+                    flush_meta_line()
+                    if truncated:
+                        break
+                    line_tokens = carry_line[1:]
+                    carry_line = line_tokens
+                    line_width = sum(t["width"] for t in line_tokens)
+
+            if not truncated and line_tokens:
+                flush_meta_line()
 
     def write_text(self, text):
         """
