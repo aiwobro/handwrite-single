@@ -2,6 +2,16 @@
 
 手写风格会议记录生成器 — 将纯文本内容渲染到会议记录纸背景图上，模拟真实手写效果。
 
+## 功能特性
+
+- 支持会议元数据与正文的手写风格渲染
+- 支持多字体随机混排、轻微旋转和字距抖动
+- 支持自动换行、自动翻页（正反面模板交替）
+- 正文支持基础中文标点禁则排版（参考 `GB/T 15834-2011`）
+  - 点号和右半标号尽量不出现在行首
+  - 左半标号尽量不出现在行尾
+  - `——`（破折号）与 `……`（省略号）作为不可拆分单元，不跨行拆开
+
 ## 安装依赖
 
 ```bash
@@ -29,11 +39,38 @@ cp config.example.yaml config.yaml
 python handwrite.py                    # 使用默认 config.yaml
 python handwrite.py -c my.yaml          # 指定其他配置文件
 python handwrite.py --meta-only         # 仅写入元数据（预览用）
+python handwrite.py --check-config      # 仅检查配置与资源，不生成图片
+python handwrite.py --debug-box         # 输出图片附带布局调试框
+python handwrite.py --seed 42           # 固定随机种子，结果可复现
+
+# 如果你在 conda 环境中，也可用：
+conda run -n <你的环境名> python handwrite.py -c config.yaml
 ```
 
 ### 3. 输出
 
 生成的图片保存在 `./output/` 目录下。
+
+## 常用参数
+
+- `--check-config`：运行前检查字体、背景图、正文来源、布局范围等配置问题。
+- `--debug-box`：在页面中绘制正文区域、基线和首页元数据框，便于快速调坐标。
+- `--seed <int>`：设置随机种子，保证同一输入可复现相同风格输出。
+
+## 标点排版规则说明
+
+当前版本在正文排版（`write_text`）中实现了基础国标断行规则：
+
+- 行首禁则：逗号、句号、顿号、分号、冒号、问号、叹号及右半括号/引号等不应出现在行首
+- 行尾禁则：左半括号/引号等不应出现在行尾
+- 不可拆分：`——`、`……` 不会被拆到两行
+
+实现方式为“先分词(token)并计算行宽，再按禁则选择断点，最后绘制”。
+
+注意：
+- 正文区域（`write_text`）默认启用上述规则
+- 元数据区域（`write_meta`）中，`venue` / `meeting_title` / `attendees` 也启用同样规则
+- `year` / `month` / `day` / `chairperson` / `recorder` 保持原逐字写入逻辑（通常不涉及标点断行）
 
 ## 配置文件格式 (config.yaml)
 
