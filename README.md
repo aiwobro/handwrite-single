@@ -59,8 +59,9 @@ conda run -n <你的环境名> python handwrite.py -c config.yaml
 实现方式为“先分词(token)并计算行宽，再按禁则选择断点，最后绘制”。
 
 注意：
-- 上述规则目前作用于正文区域
-- 元数据区域（`write_meta`）仍是按字段框逐字写入，暂未启用同等禁则策略
+- 正文区域（`write_text`）默认启用上述规则
+- 元数据区域（`write_meta`）中，`venue` / `meeting_title` / `attendees` 也启用同样规则
+- `year` / `month` / `day` / `chairperson` / `recorder` 保持原逐字写入逻辑（通常不涉及标点断行）
 
 ## 配置文件格式 (config.yaml)
 
