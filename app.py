@@ -1,17 +1,32 @@
+import os
 import random
 import uuid
 from pathlib import Path
 
-from flask import Flask, render_template, request, send_from_directory, url_for
+from flask import Flask, abort, redirect, render_template, request, send_from_directory, session, url_for
 
-from handwrite import CONFIG_BACK, CONFIG_FRONT, HandWriter
+from handwrite import (
+    DEFAULT_PAPER_TYPE,
+    HandWriter,
+    build_paper_presets,
+    get_available_paper_types,
+    load_config,
+    resolve_paper_layout,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = BASE_DIR / "output"
+PAPERS_DIR = BASE_DIR / "papers"
 DEFAULT_FONT = BASE_DIR / "fonts" / "font0.ttf"
+WEB_CONFIG_PATH = BASE_DIR / "config.yaml"
 
 app = Flask(__name__)
+app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "handwrite-dev-secret")
+
+SESSION_FORM_KEY = "last_form_data"
+SESSION_ERROR_KEY = "last_error"
+SESSION_RESULT_PREFIX_KEY = "last_result_prefix"
 
 
 def _build_meta_from_form(form):
@@ -33,21 +48,153 @@ def _copy_layout_with_absolute_bg(layout):
     return copied
 
 
-def generate_images(meta, content, seed=None):
+def _load_web_config():
+    if WEB_CONFIG_PATH.exists():
+        return load_config(str(WEB_CONFIG_PATH))
+    return {}
+
+
+def _get_paper_options(config):
+    presets = build_paper_presets(config)
+    paper_types = get_available_paper_types(presets)
+
+    configured_default = config.get("paper_type", DEFAULT_PAPER_TYPE)
+    if isinstance(configured_default, str):
+        configured_default = configured_default.strip()
+    else:
+        configured_default = DEFAULT_PAPER_TYPE
+
+    if configured_default not in presets:
+        configured_default = DEFAULT_PAPER_TYPE
+
+    return paper_types, configured_default, presets
+
+
+def _resolve_paper_asset_url(path_value):
+    """将纸张资源路径解析为可访问 URL；失败返回空字符串"""
+    if not isinstance(path_value, str) or not path_value.strip():
+        return ""
+
+    paper_root = PAPERS_DIR.resolve()
+    candidate = Path(path_value)
+    if not candidate.is_absolute():
+        candidate = (BASE_DIR / candidate).resolve()
+    else:
+        candidate = candidate.resolve()
+
+    if not candidate.exists() or not candidate.is_file():
+        return ""
+
+    try:
+        rel_path = candidate.relative_to(paper_root).as_posix()
+    except ValueError:
+        return ""
+
+    return url_for("serve_paper_asset", filename=rel_path)
+
+
+def _build_paper_preview_items(presets):
+    """构建纸张预览映射：paper_type -> [{label, url}, ...]"""
+    preview_items = {}
+
+    for paper_type, preset in presets.items():
+        items = []
+        front_url = _resolve_paper_asset_url(preset.get("front", {}).get("bg_file"))
+        back_url = _resolve_paper_asset_url(preset.get("back", {}).get("bg_file"))
+
+        if front_url:
+            items.append({"label": "正面", "url": front_url})
+        if back_url:
+            items.append({"label": "背面", "url": back_url})
+
+        # 兼容旧配置：如果 front/back 都无效，再尝试单独 preview_file
+        if not items:
+            preview_url = _resolve_paper_asset_url(preset.get("preview_file"))
+            if preview_url:
+                items.append({"label": "预览", "url": preview_url})
+
+        if items:
+            preview_items[paper_type] = items
+
+    return preview_items
+
+
+def _render_index(images=None, form_data=None, error=None):
+    form_data = dict(form_data or {})
+    paper_types = [DEFAULT_PAPER_TYPE]
+    default_paper_type = DEFAULT_PAPER_TYPE
+    paper_preview_map = {}
+    default_paper_previews = []
+    config_error = None
+
+    try:
+        config = _load_web_config()
+        paper_types, default_paper_type, presets = _get_paper_options(config)
+        paper_preview_map = _build_paper_preview_items(presets)
+        default_paper_previews = paper_preview_map.get(default_paper_type, [])
+    except Exception as exc:
+        config_error = f"配置加载失败: {exc}"
+
+    if not form_data.get("paper_type"):
+        form_data["paper_type"] = default_paper_type
+
+    if config_error:
+        error = f"{error}（另：{config_error}）" if error else config_error
+
+    return render_template(
+        "index.html",
+        images=images,
+        error=error,
+        form_data=form_data,
+        paper_types=paper_types,
+        default_paper_type=default_paper_type,
+        paper_preview_map=paper_preview_map,
+        default_paper_previews=default_paper_previews,
+    )
+
+
+def _image_urls_by_prefix(output_prefix, output_format="jpg"):
+    if not isinstance(output_prefix, str) or not output_prefix.strip():
+        return []
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    generated = sorted(OUTPUT_DIR.glob(f"{output_prefix}_page_*.{output_format}"))
+    return [url_for("serve_output", filename=p.name) for p in generated]
+
+
+def _save_page_state(form_data=None, error=None, result_prefix=None):
+    session[SESSION_FORM_KEY] = dict(form_data or {})
+    session[SESSION_ERROR_KEY] = error
+    session[SESSION_RESULT_PREFIX_KEY] = result_prefix
+
+
+def _clear_page_state():
+    session.pop(SESSION_FORM_KEY, None)
+    session.pop(SESSION_ERROR_KEY, None)
+    session.pop(SESSION_RESULT_PREFIX_KEY, None)
+
+
+def generate_images(meta, content, paper_type=None, seed=None):
     fonts = [str(DEFAULT_FONT)]
     if not DEFAULT_FONT.exists():
         raise RuntimeError(f"字体文件不存在: {DEFAULT_FONT}")
 
-    if seed:
+    if seed is not None:
         random.seed(seed)
+
+    config = _load_web_config()
+    used_paper_type, config_front, config_back, _ = resolve_paper_layout(
+        config,
+        paper_type_override=paper_type,
+    )
 
     output_prefix = f"web_{uuid.uuid4().hex[:10]}"
     output_format = "jpg"
 
     writer = HandWriter(
         fonts,
-        _copy_layout_with_absolute_bg(CONFIG_FRONT),
-        _copy_layout_with_absolute_bg(CONFIG_BACK),
+        _copy_layout_with_absolute_bg(config_front),
+        _copy_layout_with_absolute_bg(config_back),
         debug_box=False,
     )
     writer.write_meta(meta)
@@ -57,12 +204,23 @@ def generate_images(meta, content, seed=None):
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     generated = sorted(OUTPUT_DIR.glob(f"{output_prefix}_page_*.{output_format}"))
-    return [p.name for p in generated]
+    return [p.name for p in generated], used_paper_type, output_prefix
 
 
 @app.route("/", methods=["GET"])
 def index():
-    return render_template("index.html", images=None, form_data={})
+    form_data = session.get(SESSION_FORM_KEY, {})
+    error = session.get(SESSION_ERROR_KEY)
+    result_prefix = session.get(SESSION_RESULT_PREFIX_KEY)
+    images = _image_urls_by_prefix(result_prefix)
+
+    return _render_index(images=images or None, form_data=form_data, error=error)
+
+
+@app.route("/new", methods=["GET"])
+def new_generation():
+    _clear_page_state()
+    return redirect(url_for("index"))
 
 
 @app.route("/generate", methods=["POST"])
@@ -70,42 +228,55 @@ def generate():
     form_data = {k: v for k, v in request.form.items()}
     content = request.form.get("content", "").strip()
     seed_value = request.form.get("seed", "").strip()
+    paper_type = request.form.get("paper_type", "").strip() or None
+    if paper_type:
+        form_data["paper_type"] = paper_type
 
     if not content:
-        return render_template(
-            "index.html",
-            images=None,
-            error="会议正文不能为空。",
-            form_data=form_data,
-        )
+        _save_page_state(form_data=form_data, error="会议正文不能为空。", result_prefix=None)
+        return redirect(url_for("index"))
 
     try:
         seed = int(seed_value) if seed_value else None
     except ValueError:
-        return render_template(
-            "index.html",
-            images=None,
-            error="随机种子必须是整数。",
-            form_data=form_data,
-        )
+        _save_page_state(form_data=form_data, error="随机种子必须是整数。", result_prefix=None)
+        return redirect(url_for("index"))
 
     try:
-        images = generate_images(_build_meta_from_form(request.form), content, seed=seed)
-    except Exception as exc:
-        return render_template(
-            "index.html",
-            images=None,
-            error=f"生成失败: {exc}",
-            form_data=form_data,
+        _, used_paper_type, output_prefix = generate_images(
+            _build_meta_from_form(request.form),
+            content,
+            paper_type=paper_type,
+            seed=seed,
         )
+        form_data["paper_type"] = used_paper_type
+    except Exception as exc:
+        _save_page_state(form_data=form_data, error=f"生成失败: {exc}", result_prefix=None)
+        return redirect(url_for("index"))
 
-    image_urls = [url_for("serve_output", filename=name) for name in images]
-    return render_template("index.html", images=image_urls, form_data=form_data)
+    _save_page_state(form_data=form_data, error=None, result_prefix=output_prefix)
+    return redirect(url_for("index"))
 
 
 @app.route("/output/<path:filename>", methods=["GET"])
 def serve_output(filename):
     return send_from_directory(str(OUTPUT_DIR), filename)
+
+
+@app.route("/paper-assets/<path:filename>", methods=["GET"])
+def serve_paper_asset(filename):
+    paper_root = PAPERS_DIR.resolve()
+    target = (paper_root / filename).resolve()
+
+    try:
+        relative_name = target.relative_to(paper_root)
+    except ValueError:
+        abort(404)
+
+    if not target.exists() or not target.is_file():
+        abort(404)
+
+    return send_from_directory(str(paper_root), relative_name.as_posix())
 
 
 if __name__ == "__main__":

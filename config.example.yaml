@@ -16,6 +16,14 @@ meta:
   recorder: "李四"
   attendees: "王五，赵六"
 
+# 纸张类型（默认值来自 paper_presets.yaml，通常为 default）
+paper_type: "default"
+
+# 如需新增纸张类型：
+# 1) 在 papers/<paper_type>/ 放置 front.jpg / back.jpg
+# 2) 在 paper_presets.yaml 中新增同名配置
+# 3) 将此处 paper_type 切换到新类型
+
 # 正文内容：两种方式
 # 方式1：指定外部文件路径（适合长文本）
 content_file: "content.txt"
