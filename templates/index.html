@@ -74,6 +74,17 @@
       grid-column: 1 / -1;
     }
 
+    .date-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .date-field input {
+      width: 100%;
+      max-width: 88px;
+    }
+
     input, textarea, button {
       font: inherit;
       border: 1px solid var(--line);
@@ -511,18 +522,20 @@
       <h1>会议记录手写生成</h1>
       <form method="post" action="/generate" id="generateForm">
         <div class="grid">
-          <label class="field">
-            <span>年份</span>
-            <input name="year" value="{{ form_data.get('year', '') }}" placeholder="2026">
-          </label>
-          <label class="field">
-            <span>月份</span>
-            <input name="month" value="{{ form_data.get('month', '') }}" placeholder="3">
-          </label>
-          <label class="field">
-            <span>日期</span>
-            <input name="day" value="{{ form_data.get('day', '') }}" placeholder="28">
-          </label>
+          <div class="field full date-row">
+            <label class="field date-field">
+              <span>年份</span>
+              <input name="year" value="{{ form_data.get('year', '') }}" placeholder="2026">
+            </label>
+            <label class="field date-field">
+              <span>月份</span>
+              <input name="month" value="{{ form_data.get('month', '') }}" placeholder="3">
+            </label>
+            <label class="field date-field">
+              <span>日期</span>
+              <input name="day" value="{{ form_data.get('day', '') }}" placeholder="28">
+            </label>
+          </div>
           <label class="field full">
             <span>会议地点</span>
             <input name="venue" value="{{ form_data.get('venue', '') }}" placeholder="会议室A">
