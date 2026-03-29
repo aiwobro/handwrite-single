@@ -3,9 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>会议记录手写生成</title>
+  <title>会议记录手写生成 — Handwrite Single</title>
+  <meta name="description" content="将会议内容自动排版到真实纸张模板，支持中文标点禁则、分页渲染、灯箱预览与批量导出。">
+  <meta name="theme-color" content="#1c2e28">
   <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
   <link rel="shortcut icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}">
 </head>
 <body class="{% if images %}has-result{% endif %}">
@@ -13,7 +17,7 @@
   {% set hero_primary = default_paper_previews[0].get('url') if default_paper_previews and default_paper_previews|length > 0 else '' %}
   {% set hero_secondary = default_paper_previews[1].get('url') if default_paper_previews and default_paper_previews|length > 1 else hero_primary %}
 
-  <header class="hero-banner">
+  <header class="hero-banner" role="banner">
     <div class="hero-shell">
       <div class="hero-copy reveal-on-scroll is-visible">
         <p class="hero-brand">Handwrite Single</p>
@@ -21,7 +25,7 @@
         <p class="hero-subtitle">将会议内容自动排版到真实纸张模板，支持中文标点禁则、分页渲染、灯箱预览与批量导出。</p>
         <div class="hero-actions">
           <a class="hero-primary" href="#workspaceStart">立即开始生成</a>
-          <p class="hero-hint">从文本到手写页，完整流程一页完成。</p>
+          <span class="hero-hint">从文本到手写页，完整流程一页完成。</span>
         </div>
       </div>
 
@@ -35,11 +39,13 @@
       </aside>
     </div>
 
-    <ul class="hero-feature-strip">
-      <li>智能断行与标点禁则</li>
-      <li>正反模板自动分页</li>
-      <li>预览放大与一键下载</li>
-    </ul>
+    <nav aria-label="功能特点">
+      <ul class="hero-feature-strip">
+        <li>智能断行与标点禁则</li>
+        <li>正反模板自动分页</li>
+        <li>预览放大与一键下载</li>
+      </ul>
+    </nav>
   </header>
 
   <main class="workspace" id="workspaceStart">
@@ -51,75 +57,77 @@
 
     <div class="wrap">
       <div class="main-layout with-right" id="mainLayout">
-        <section class="panel form-panel reveal-on-scroll" id="formPanel">
+        <section class="panel form-panel reveal-on-scroll" id="formPanel" aria-labelledby="form-panel-title">
           <div class="panel-head">
-            <h3>会议信息</h3>
+            <h3 id="form-panel-title">会议信息</h3>
             <p>根据纸张模板自动排版，支持固定随机种子复现效果。</p>
           </div>
 
-          <form method="post" action="/generate" id="generateForm">
+          <form method="post" action="/generate" id="generateForm" novalidate>
             <div class="grid">
               <div class="field full date-row">
-                <label class="field date-field">
-                  <span>年份</span>
-                  <input name="year" value="{{ form_data.get('year', '') }}" placeholder="2026">
-                </label>
-                <label class="field date-field">
-                  <span>月份</span>
-                  <input name="month" value="{{ form_data.get('month', '') }}" placeholder="3">
-                </label>
-                <label class="field date-field">
-                  <span>日期</span>
-                  <input name="day" value="{{ form_data.get('day', '') }}" placeholder="28">
-                </label>
+                <div class="field date-field">
+                  <label for="input-year"><span>年份</span></label>
+                  <input id="input-year" name="year" value="{{ form_data.get('year', '') }}" placeholder="2026" autocomplete="off">
+                </div>
+                <div class="field date-field">
+                  <label for="input-month"><span>月份</span></label>
+                  <input id="input-month" name="month" value="{{ form_data.get('month', '') }}" placeholder="3" autocomplete="off">
+                </div>
+                <div class="field date-field">
+                  <label for="input-day"><span>日期</span></label>
+                  <input id="input-day" name="day" value="{{ form_data.get('day', '') }}" placeholder="28" autocomplete="off">
+                </div>
               </div>
 
-              <label class="field full">
-                <span>会议地点</span>
-                <input name="venue" value="{{ form_data.get('venue', '') }}" placeholder="会议室A">
-              </label>
+              <div class="field full">
+                <label for="input-venue"><span>会议地点</span></label>
+                <input id="input-venue" name="venue" value="{{ form_data.get('venue', '') }}" placeholder="会议室A" autocomplete="off">
+              </div>
 
-              <label class="field full">
-                <span>会议标题</span>
-                <input name="meeting_title" value="{{ form_data.get('meeting_title', '') }}" placeholder="关于项目进度总结会议">
-              </label>
+              <div class="field full">
+                <label for="input-title"><span>会议标题</span></label>
+                <input id="input-title" name="meeting_title" value="{{ form_data.get('meeting_title', '') }}" placeholder="关于项目进度总结会议" autocomplete="off">
+              </div>
 
-              <label class="field">
-                <span>主持人</span>
-                <input name="chairperson" value="{{ form_data.get('chairperson', '') }}" placeholder="张三">
-              </label>
+              <div class="field">
+                <label for="input-chair"><span>主持人</span></label>
+                <input id="input-chair" name="chairperson" value="{{ form_data.get('chairperson', '') }}" placeholder="张三" autocomplete="off">
+              </div>
 
-              <label class="field">
-                <span>记录人</span>
-                <input name="recorder" value="{{ form_data.get('recorder', '') }}" placeholder="李四">
-              </label>
+              <div class="field">
+                <label for="input-recorder"><span>记录人</span></label>
+                <input id="input-recorder" name="recorder" value="{{ form_data.get('recorder', '') }}" placeholder="李四" autocomplete="off">
+              </div>
 
-              <label class="field">
-                <span>参会人</span>
-                <input name="attendees" value="{{ form_data.get('attendees', '') }}" placeholder="王五，赵六">
-              </label>
+              <div class="field">
+                <label for="input-attendees"><span>参会人</span></label>
+                <input id="input-attendees" name="attendees" value="{{ form_data.get('attendees', '') }}" placeholder="王五，赵六" autocomplete="off">
+              </div>
 
-              <label class="field">
-                <span>纸张类型</span>
-                <select name="paper_type">
+              <div class="field">
+                <label for="input-paper"><span>纸张类型</span></label>
+                <select id="input-paper" name="paper_type">
                   {% for paper_type_name in paper_types %}
                   <option value="{{ paper_type_name }}" {% if selected_paper_type == paper_type_name %}selected{% endif %}>{{ paper_type_name }}</option>
                   {% endfor %}
                 </select>
-              </label>
-
-              <label class="field full">
-                <span>随机种子（可选）</span>
-                <input name="seed" value="{{ form_data.get('seed', '') }}" placeholder="42">
-              </label>
-
-              <label class="field full">
-                <span>会议正文</span>
-                <textarea name="content" placeholder="请输入会议正文内容...">{{ form_data.get('content', '') }}</textarea>
-              </label>
+              </div>
 
               <div class="field full">
-                <button type="submit" id="generateBtn">生成手写图片</button>
+                <label for="input-seed"><span>随机种子（可选）</span></label>
+                <input id="input-seed" name="seed" value="{{ form_data.get('seed', '') }}" placeholder="42" autocomplete="off">
+              </div>
+
+              <div class="field full">
+                <label for="input-content"><span>会议正文</span></label>
+                <textarea id="input-content" name="content" placeholder="请输入会议正文内容...">{{ form_data.get('content', '') }}</textarea>
+              </div>
+
+              <div class="field full">
+                <button type="submit" id="generateBtn">
+                  <span>生成手写图片</span>
+                </button>
               </div>
             </div>
           </form>
@@ -129,9 +137,9 @@
           {% endif %}
         </section>
 
-        <section class="panel result-panel reveal-on-scroll" id="rightPanel">
+        <section class="panel result-panel reveal-on-scroll" id="rightPanel" aria-labelledby="result-panel-title">
           <div class="panel-head result-head">
-            <h3>预览与输出</h3>
+            <h3 id="result-panel-title">预览与输出</h3>
             <p>生成前查看纸张样式，生成后支持大图查看、切换和保存。</p>
           </div>
 
@@ -186,23 +194,38 @@
     </div>
   </main>
 
-  <div class="lightbox" id="lightbox">
+  <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-labelledby="lightboxTitle">
     <div class="lightbox-inner">
-      <button type="button" class="lightbox-nav prev" id="lightboxPrev" aria-label="上一张">‹</button>
-      <button type="button" class="lightbox-nav next" id="lightboxNext" aria-label="下一张">›</button>
-      <a class="secondary-btn lightbox-download" id="lightboxDownload" href="#" download>保存此图</a>
-      <div class="lightbox-tools">
-        <button type="button" class="secondary-btn" id="zoomOutBtn" aria-label="缩小图片">缩小</button>
-        <span class="lightbox-zoom-level" id="zoomLevelText">100%</span>
-        <button type="button" class="secondary-btn" id="zoomInBtn" aria-label="放大图片">放大</button>
-        <button type="button" class="secondary-btn" id="zoomResetBtn" aria-label="重置缩放">重置</button>
+      <span class="sr-only" id="lightboxTitle">图片预览</span>
+      <button type="button" class="lightbox-nav prev" id="lightboxPrev" aria-label="上一张（←）">‹</button>
+      <button type="button" class="lightbox-nav next" id="lightboxNext" aria-label="下一张（→）">›</button>
+      <a class="secondary-btn lightbox-download" id="lightboxDownload" href="#" download aria-label="保存当前图片">保存此图</a>
+      <div class="lightbox-tools" role="group" aria-label="缩放控制">
+        <button type="button" class="secondary-btn" id="zoomOutBtn" aria-label="缩小图片（-）" aria-keyshortcuts="-">−</button>
+        <span class="lightbox-zoom-level" id="zoomLevelText" aria-live="polite">100%</span>
+        <button type="button" class="secondary-btn" id="zoomInBtn" aria-label="放大图片（+）" aria-keyshortcuts="+">+</button>
+        <button type="button" class="secondary-btn" id="zoomResetBtn" aria-label="重置缩放（0）">重置</button>
       </div>
-      <button type="button" class="lightbox-close" id="lightboxClose" aria-label="关闭预览">×</button>
+      <button type="button" class="lightbox-close" id="lightboxClose" aria-label="关闭预览（Esc）">×</button>
       <div class="lightbox-stage" id="lightboxStage">
         <img class="lightbox-img" id="lightboxImg" src="" alt="大图预览">
       </div>
     </div>
   </div>
+
+  <style>
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+  </style>
 
   <script>
     window.__INDEX_PAGE_DATA = {
