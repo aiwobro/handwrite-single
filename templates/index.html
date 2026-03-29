@@ -223,6 +223,8 @@
     .result-toolbar {
       display: flex;
       justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
       margin-bottom: 12px;
     }
 
@@ -656,6 +658,7 @@
     {% if images %}
     <div class="panel result-panel">
       <div class="result-toolbar">
+        <a class="secondary-btn" href="{{ url_for('new_generation') }}">新建生成（清空）</a>
         <button type="button" class="secondary-btn" id="saveAllBtn">一键保存全部</button>
       </div>
       <div class="images-grid">

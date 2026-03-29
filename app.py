@@ -112,6 +112,12 @@ def _save_page_state(form_data=None, error=None, result_prefix=None):
     session[SESSION_RESULT_PREFIX_KEY] = result_prefix
 
 
+def _clear_page_state():
+    session.pop(SESSION_FORM_KEY, None)
+    session.pop(SESSION_ERROR_KEY, None)
+    session.pop(SESSION_RESULT_PREFIX_KEY, None)
+
+
 def generate_images(meta, content, paper_type=None, seed=None):
     fonts = [str(DEFAULT_FONT)]
     if not DEFAULT_FONT.exists():
@@ -153,6 +159,12 @@ def index():
     images = _image_urls_by_prefix(result_prefix)
 
     return _render_index(images=images or None, form_data=form_data, error=error)
+
+
+@app.route("/new", methods=["GET"])
+def new_generation():
+    _clear_page_state()
+    return redirect(url_for("index"))
 
 
 @app.route("/generate", methods=["POST"])
