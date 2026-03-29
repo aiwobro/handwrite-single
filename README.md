@@ -7,6 +7,7 @@
 - 支持会议元数据与正文的手写风格渲染
 - 支持多字体随机混排、轻微旋转和字距抖动
 - 支持自动换行、自动翻页（正反面模板交替）
+- 支持按 `paper_type` 选择纸张预设（背景图与坐标参数联动）
 - 提供 Flask Web 页面，支持在线填写表单并生成预览
 - Web 端支持“生成中”进度动画预览区
 - Web 端支持缩略图预览、点击大图、左右切换、单张保存与一键保存全部
@@ -42,6 +43,7 @@ cp config.example.yaml config.yaml
 ```bash
 python handwrite.py                    # 使用默认 config.yaml
 python handwrite.py -c my.yaml          # 指定其他配置文件
+python handwrite.py --paper-type default # 显式指定纸张类型（覆盖 config 内 paper_type）
 python handwrite.py --meta-only         # 仅写入元数据（预览用）
 python handwrite.py --check-config      # 仅检查配置与资源，不生成图片
 python handwrite.py --debug-box         # 输出图片附带布局调试框
@@ -85,6 +87,7 @@ python app.py
 ## 常用参数
 
 - `--check-config`：运行前检查字体、背景图、正文来源、布局范围等配置问题。
+- `--paper-type <name>`：指定纸张类型（优先级高于 `config.yaml` 中的 `paper_type`）。
 - `--debug-box`：在页面中绘制正文区域、基线和首页元数据框，便于快速调坐标。
 - `--seed <int>`：设置随机种子，保证同一输入可复现相同风格输出。
 
@@ -117,6 +120,38 @@ meta:
   recorder: "李四"
   attendees: "王五，赵六"
 
+# 纸张类型（默认值：default）
+paper_type: "default"
+
+# 可选：自定义纸张预设（新增或覆盖）
+# paper_presets:
+#   notebook_a:
+#     front:
+#       bg_file: "./papers/notebook_a_front.jpg"
+#       start_y: 567
+#       line_spacing: 71
+#       font_size: 50
+#       left_margin: 150
+#       right_margin: 130
+#       bottom_margin: 150
+#       meta_position:
+#         year:          {x: 818, y: 133, width: 140, height: 80}
+#         month:         {x: 923, y: 138, width: 80,  height: 80}
+#         day:           {x: 980, y: 138, width: 80,  height: 80}
+#         venue:         {x: 577, y: 235, width: 220, height: 80}
+#         meeting_title: {x: 303, y: 345, width: 700, height: 120}
+#         recorder:      {x: 888, y: 350, width: 200, height: 80}
+#         chairperson:   {x: 900, y: 273, width: 200, height: 80}
+#         attendees:     {x: 309, y: 450, width: 800, height: 150}
+#     back:
+#       bg_file: "./papers/notebook_a_back.jpg"
+#       start_y: 215
+#       line_spacing: 71
+#       font_size: 50
+#       left_margin: 130
+#       right_margin: 150
+#       bottom_margin: 150
+
 # 正文：指定外部文件
 content_file: "content.txt"
 
@@ -134,9 +169,14 @@ fonts:
   - "./fonts/font0.ttf"
 ```
 
-## 布局配置说明
+## 纸张与布局配置说明
 
-脚本顶部的 `CONFIG_FRONT` / `CONFIG_BACK` 控制排版：
+脚本通过 `PAPER_PRESETS` 管理纸张类型，每个类型都绑定一套 `front/back` 配置（背景图 + 坐标参数）。
+默认使用 `paper_type: default`，即当前的 `page1.jpg` + `page2.jpg` 配置。
+
+若 `paper_type` 指定了不存在的类型，程序会报错并列出可选值（例如 `default, notebook_a`）。
+
+每个 `front/back` 配置中的公共参数如下：
 
 | 参数 | 说明 |
 |------|------|

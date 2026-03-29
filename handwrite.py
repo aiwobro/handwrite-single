@@ -2,6 +2,7 @@ import random
 import os
 import argparse
 import sys
+import copy
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 try:
@@ -11,39 +12,56 @@ except ImportError:
 
 # ================= 配置区域 =================
 
-# --- 首页 (正面) 配置：对应 page1.jpg ---
-CONFIG_FRONT = {
-    "bg_file": "page1.jpg",
-    "start_y": 567,
-    "line_spacing": 71,
-    "font_size": 50,
-    "left_margin": 150,
-    "right_margin": 130,
-    "bottom_margin": 150,
+DEFAULT_PAPER_TYPE = "default"
 
-    # 会议元数据坐标配置：每个字段为独立矩形区域 (x, y, width, height)
-    "meta_position": {
-        "year":          {"x": 818, "y": 133, "width": 140, "height": 80},
-        "month":         {"x": 923, "y": 138, "width": 80,  "height": 80},
-        "day":           {"x": 980, "y": 138, "width": 80,  "height": 80},
-        "venue":         {"x": 577, "y": 235, "width": 220, "height": 80},
-        "meeting_title": {"x": 303, "y": 345, "width": 700, "height": 120},
-        "recorder":      {"x": 888, "y": 350, "width": 200, "height": 80},
-        "chairperson":   {"x": 900, "y": 273, "width": 200, "height": 80},
-        "attendees":     {"x": 309, "y": 450, "width": 800, "height": 150},
+# 纸张预设：每套纸张绑定前/后页背景图与对应坐标参数
+PAPER_PRESETS = {
+    DEFAULT_PAPER_TYPE: {
+        "front": {
+            "bg_file": "page1.jpg",
+            "start_y": 567,
+            "line_spacing": 71,
+            "font_size": 50,
+            "left_margin": 150,
+            "right_margin": 130,
+            "bottom_margin": 150,
+            # 会议元数据坐标配置：每个字段为独立矩形区域 (x, y, width, height)
+            "meta_position": {
+                "year":          {"x": 818, "y": 133, "width": 140, "height": 80},
+                "month":         {"x": 923, "y": 138, "width": 80,  "height": 80},
+                "day":           {"x": 980, "y": 138, "width": 80,  "height": 80},
+                "venue":         {"x": 577, "y": 235, "width": 220, "height": 80},
+                "meeting_title": {"x": 303, "y": 345, "width": 700, "height": 120},
+                "recorder":      {"x": 888, "y": 350, "width": 200, "height": 80},
+                "chairperson":   {"x": 900, "y": 273, "width": 200, "height": 80},
+                "attendees":     {"x": 309, "y": 450, "width": 800, "height": 150},
+            }
+        },
+        "back": {
+            "bg_file": "page2.jpg",
+            "start_y": 215,
+            "line_spacing": 71,
+            "font_size": 50,
+            "left_margin": 130,
+            "right_margin": 150,
+            "bottom_margin": 150,
+        },
     }
 }
 
-# --- 背面 (及后续页) 配置：对应 page2.jpg ---
-CONFIG_BACK = {
-    "bg_file": "page2.jpg",
-    "start_y": 215,
-    "line_spacing": 71,
-    "font_size": 50,
-    "left_margin": 130,
-    "right_margin": 150,
-    "bottom_margin": 150,
-}
+# 向后兼容：保留原常量名给已有调用方（例如 app.py）
+CONFIG_FRONT = PAPER_PRESETS[DEFAULT_PAPER_TYPE]["front"]
+CONFIG_BACK = PAPER_PRESETS[DEFAULT_PAPER_TYPE]["back"]
+
+LAYOUT_REQUIRED_FIELDS = (
+    "bg_file",
+    "start_y",
+    "line_spacing",
+    "font_size",
+    "left_margin",
+    "right_margin",
+    "bottom_margin",
+)
 
 # ===========================================
 
@@ -550,6 +568,7 @@ def parse_args():
 示例:
   python handwrite.py                    # 使用默认 config.yaml
   python handwrite.py -c my.yaml         # 指定配置文件
+  python handwrite.py --paper-type default # 显式指定纸张类型
   python handwrite.py --meta-only        # 仅预览元数据效果（不写正文）
   python handwrite.py --check-config     # 仅检查配置与资源，不生成图片
   python handwrite.py --debug-box        # 输出图片附带布局调试框
@@ -560,6 +579,11 @@ def parse_args():
         "-c", "--config",
         default="config.yaml",
         help="配置文件路径 (默认: config.yaml)"
+    )
+    parser.add_argument(
+        "--paper-type",
+        default=None,
+        help="纸张类型（覆盖配置文件中的 paper_type）"
     )
     parser.add_argument(
         "--meta-only",
@@ -605,7 +629,71 @@ def load_config(config_path):
     return config
 
 
-def validate_config(config, config_front, config_back):
+def get_available_paper_types(presets):
+    """返回可选纸张类型列表（排序后）"""
+    return sorted(presets.keys())
+
+
+def build_paper_presets(config):
+    """
+    构建最终可用纸张预设：
+    - 内置 PAPER_PRESETS 始终可用
+    - 可通过 config.paper_presets 追加/覆盖
+    """
+    presets = copy.deepcopy(PAPER_PRESETS)
+    custom_presets = config.get("paper_presets")
+    if custom_presets is None:
+        return presets
+
+    if not isinstance(custom_presets, dict):
+        raise ValueError("`paper_presets` 必须是对象（key 为纸张类型，value 为配置）。")
+
+    for name, preset in custom_presets.items():
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("`paper_presets` 中存在非法纸张类型名（必须是非空字符串）。")
+        if not isinstance(preset, dict):
+            raise ValueError(f"`paper_presets.{name}` 必须是对象。")
+
+        front = preset.get("front")
+        back = preset.get("back")
+        if not isinstance(front, dict) or not isinstance(back, dict):
+            raise ValueError(f"`paper_presets.{name}` 必须同时包含 `front` 和 `back` 对象。")
+
+        presets[name.strip()] = copy.deepcopy(preset)
+
+    return presets
+
+
+def resolve_paper_type(config, paper_type_override=None):
+    """解析最终纸张类型：命令行优先，其次配置，最后默认值"""
+    paper_type = paper_type_override if paper_type_override else config.get("paper_type", DEFAULT_PAPER_TYPE)
+    if not isinstance(paper_type, str) or not paper_type.strip():
+        raise ValueError("`paper_type` 必须是非空字符串。")
+    return paper_type.strip()
+
+
+def resolve_paper_layout(config, paper_type_override=None):
+    """
+    解析当前使用的纸张配置。
+    返回：paper_type, config_front, config_back, all_presets
+    """
+    all_presets = build_paper_presets(config)
+    paper_type = resolve_paper_type(config, paper_type_override=paper_type_override)
+
+    if paper_type not in all_presets:
+        choices = ", ".join(get_available_paper_types(all_presets))
+        raise ValueError(f"未知纸张类型 `{paper_type}`。可选值：{choices}")
+
+    selected = all_presets[paper_type]
+    front = selected.get("front")
+    back = selected.get("back")
+    if not isinstance(front, dict) or not isinstance(back, dict):
+        raise ValueError(f"纸张类型 `{paper_type}` 配置非法：必须包含 front/back 对象。")
+
+    return paper_type, front, back, all_presets
+
+
+def validate_config(config, config_front, config_back, paper_type):
     """校验配置与资源，返回 (warnings, errors)"""
     warnings = []
     errors = []
@@ -645,23 +733,55 @@ def validate_config(config, config_front, config_back):
         elif fmt.lower() not in {"jpg", "jpeg", "png"}:
             warnings.append(f"输出格式 `{fmt}` 未验证，建议使用 jpg/jpeg/png。")
 
-    # 元数据坐标检查（固定配置）
-    meta_positions = config_front.get("meta_position", {})
+    if "paper_type" in config and not isinstance(config.get("paper_type"), str):
+        errors.append("`paper_type` 必须是字符串。")
+
+    for side_name, layout in (("front", config_front), ("back", config_back)):
+        for field in LAYOUT_REQUIRED_FIELDS:
+            if field not in layout:
+                errors.append(f"`paper_type={paper_type}` 的 `{side_name}` 缺少字段 `{field}`。")
+
+        bg_file = layout.get("bg_file")
+        if "bg_file" in layout and (not isinstance(bg_file, str) or not bg_file.strip()):
+            errors.append(f"`paper_type={paper_type}` 的 `{side_name}.bg_file` 必须是非空字符串。")
+
+        for f in ("start_y", "line_spacing", "font_size", "left_margin", "right_margin", "bottom_margin"):
+            if f in layout and not isinstance(layout[f], int):
+                errors.append(f"`paper_type={paper_type}` 的 `{side_name}.{f}` 必须是整数。")
+
+        if isinstance(layout.get("line_spacing"), int) and layout["line_spacing"] <= 0:
+            errors.append(f"`paper_type={paper_type}` 的 `{side_name}.line_spacing` 必须大于 0。")
+        if isinstance(layout.get("font_size"), int) and layout["font_size"] <= 0:
+            errors.append(f"`paper_type={paper_type}` 的 `{side_name}.font_size` 必须大于 0。")
+
+    # front 的元数据坐标必须存在并完整
+    meta_positions = config_front.get("meta_position")
+    if not isinstance(meta_positions, dict) or not meta_positions:
+        errors.append(f"`paper_type={paper_type}` 的 `front.meta_position` 必须是非空对象。")
+        meta_positions = {}
+
     for key, box in meta_positions.items():
+        if not isinstance(box, dict):
+            errors.append(f"`paper_type={paper_type}` 的 `meta_position.{key}` 必须是对象。")
+            continue
         for f in ("x", "y", "width", "height"):
             if f not in box:
-                errors.append(f"meta_position.{key} 缺少字段 `{f}`")
+                errors.append(f"`paper_type={paper_type}` 的 `meta_position.{key}` 缺少字段 `{f}`")
                 continue
             if not isinstance(box[f], int):
-                errors.append(f"meta_position.{key}.{f} 必须是整数")
+                errors.append(f"`paper_type={paper_type}` 的 `meta_position.{key}.{f}` 必须是整数")
         if "width" in box and isinstance(box["width"], int) and box["width"] <= 0:
-            errors.append(f"meta_position.{key}.width 必须大于 0")
+            errors.append(f"`paper_type={paper_type}` 的 `meta_position.{key}.width` 必须大于 0")
         if "height" in box and isinstance(box["height"], int) and box["height"] <= 0:
-            errors.append(f"meta_position.{key}.height 必须大于 0")
+            errors.append(f"`paper_type={paper_type}` 的 `meta_position.{key}.height` 必须大于 0")
 
     # 背景图检查与范围校验
-    for cfg_name, layout in (("CONFIG_FRONT", config_front), ("CONFIG_BACK", config_back)):
+    for side_name, layout in (("front", config_front), ("back", config_back)):
+        cfg_name = f"{paper_type}.{side_name}"
         bg = layout.get("bg_file")
+        if not isinstance(bg, str) or not bg.strip():
+            continue
+
         if not os.path.exists(bg):
             warnings.append(f"{cfg_name} 背景图不存在: {bg}（运行时将使用空白背景兜底）")
             continue
@@ -673,23 +793,32 @@ def validate_config(config, config_front, config_back):
             errors.append(f"{cfg_name} 背景图无法读取: {bg} ({e})")
             continue
 
-        lm = layout.get("left_margin", 0)
-        rm = layout.get("right_margin", 0)
-        by = layout.get("bottom_margin", 0)
-        sy = layout.get("start_y", 0)
+        numeric_fields = ("left_margin", "right_margin", "bottom_margin", "start_y")
+        if not all(isinstance(layout.get(f), int) for f in numeric_fields):
+            continue
+
+        lm = layout["left_margin"]
+        rm = layout["right_margin"]
+        by = layout["bottom_margin"]
+        sy = layout["start_y"]
         if lm + rm >= w:
             errors.append(f"{cfg_name} 左右边距之和超过页面宽度。")
         if sy >= h - by:
             warnings.append(f"{cfg_name} start_y 接近或超过可写底部，可能没有正文空间。")
 
-        if cfg_name == "CONFIG_FRONT":
+        if side_name == "front":
             for key, box in meta_positions.items():
-                x = box.get("x", 0)
-                y = box.get("y", 0)
-                bw = box.get("width", 0)
-                bh = box.get("height", 0)
+                if not isinstance(box, dict):
+                    continue
+                coords = ("x", "y", "width", "height")
+                if not all(isinstance(box.get(f), int) for f in coords):
+                    continue
+                x = box["x"]
+                y = box["y"]
+                bw = box["width"]
+                bh = box["height"]
                 if x < 0 or y < 0 or x + bw > w or y + bh > h:
-                    errors.append(f"meta_position.{key} 超出背景图范围（{w}x{h}）。")
+                    errors.append(f"`paper_type={paper_type}` 的 `meta_position.{key}` 超出背景图范围（{w}x{h}）。")
 
     return warnings, errors
 
@@ -710,7 +839,18 @@ if __name__ == "__main__":
         print(f"【错误】配置读取失败：{e}")
         sys.exit(1)
 
-    warnings, errors = validate_config(config, CONFIG_FRONT, CONFIG_BACK)
+    try:
+        paper_type, config_front, config_back, all_presets = resolve_paper_layout(
+            config,
+            paper_type_override=args.paper_type
+        )
+    except Exception as e:
+        print(f"【错误】纸张类型配置错误：{e}")
+        sys.exit(1)
+
+    print(f"使用纸张类型: {paper_type}")
+
+    warnings, errors = validate_config(config, config_front, config_back, paper_type)
     for w in warnings:
         print(f"【警告】{w}")
     if errors:
@@ -719,7 +859,8 @@ if __name__ == "__main__":
             print(f"  {i}. {e}")
         sys.exit(1)
     if args.check_config:
-        print("配置检查通过。")
+        choices = ", ".join(get_available_paper_types(all_presets))
+        print(f"配置检查通过。可选纸张类型：{choices}")
         sys.exit(0)
 
     if args.seed is not None:
@@ -751,7 +892,7 @@ if __name__ == "__main__":
     output_format = output_config.get("format", "jpg")
 
     try:
-        writer = HandWriter(fonts, CONFIG_FRONT, CONFIG_BACK, debug_box=args.debug_box)
+        writer = HandWriter(fonts, config_front, config_back, debug_box=args.debug_box)
 
         if meta_info:
             writer.write_meta(meta_info)

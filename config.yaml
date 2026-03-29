@@ -16,6 +16,40 @@ meta:
   recorder: "李四"
   attendees: "王五，赵六"
 
+# 纸张类型（默认使用当前 page1.jpg + page2.jpg 这一套）
+paper_type: "default"
+
+# 可选：新增/覆盖纸张预设
+# 注意：每个预设都必须包含 front/back 完整配置；
+#       front 需要额外提供 meta_position
+# paper_presets:
+#   notebook_a:
+#     front:
+#       bg_file: "./papers/notebook_a_front.jpg"
+#       start_y: 567
+#       line_spacing: 71
+#       font_size: 50
+#       left_margin: 150
+#       right_margin: 130
+#       bottom_margin: 150
+#       meta_position:
+#         year:          {x: 818, y: 133, width: 140, height: 80}
+#         month:         {x: 923, y: 138, width: 80,  height: 80}
+#         day:           {x: 980, y: 138, width: 80,  height: 80}
+#         venue:         {x: 577, y: 235, width: 220, height: 80}
+#         meeting_title: {x: 303, y: 345, width: 700, height: 120}
+#         recorder:      {x: 888, y: 350, width: 200, height: 80}
+#         chairperson:   {x: 900, y: 273, width: 200, height: 80}
+#         attendees:     {x: 309, y: 450, width: 800, height: 150}
+#     back:
+#       bg_file: "./papers/notebook_a_back.jpg"
+#       start_y: 215
+#       line_spacing: 71
+#       font_size: 50
+#       left_margin: 130
+#       right_margin: 150
+#       bottom_margin: 150
+
 # 正文内容：两种方式
 # 方式1：指定外部文件路径（适合长文本）
 content_file: "content.txt"
