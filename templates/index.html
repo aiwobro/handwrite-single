@@ -44,8 +44,12 @@
     .form-panel,
     .result-panel {
       width: 100%;
-      max-width: 960px;
+      max-width: 980px;
       margin: 0 auto;
+    }
+
+    .form-panel {
+      max-width: 560px;
     }
 
     h1 {
@@ -284,7 +288,7 @@
       }
 
       .main-layout.has-images {
-        grid-template-columns: minmax(420px, 500px) minmax(0, 1fr);
+        display: flex;
         align-items: stretch;
         gap: 18px;
       }
@@ -293,17 +297,17 @@
         min-width: 0;
       }
 
-      .main-layout.has-images .form-panel,
-      .main-layout.has-images .result-panel {
-        margin: 0;
-        max-width: none;
-      }
-
       .main-layout.has-images .form-panel {
         position: static;
+        flex: 0 0 500px;
+        max-width: 500px;
+        margin: 0;
       }
 
       .main-layout.has-images .result-panel {
+        flex: 1 1 auto;
+        max-width: none;
+        margin: 0;
         height: 100%;
         overflow: hidden;
       }
@@ -319,6 +323,10 @@
     @media (max-width: 1024px) {
       .wrap {
         max-width: 920px;
+      }
+
+      .form-panel {
+        max-width: 620px;
       }
 
       .grid {
