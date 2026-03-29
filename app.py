@@ -1,8 +1,9 @@
+import os
 import random
 import uuid
 from pathlib import Path
 
-from flask import Flask, render_template, request, send_from_directory, url_for
+from flask import redirect, render_template, request, send_from_directory, session, url_for, Flask
 
 from handwrite import (
     DEFAULT_PAPER_TYPE,
@@ -20,6 +21,11 @@ DEFAULT_FONT = BASE_DIR / "fonts" / "font0.ttf"
 WEB_CONFIG_PATH = BASE_DIR / "config.yaml"
 
 app = Flask(__name__)
+app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "handwrite-dev-secret")
+
+SESSION_FORM_KEY = "last_form_data"
+SESSION_ERROR_KEY = "last_error"
+SESSION_RESULT_PREFIX_KEY = "last_result_prefix"
 
 
 def _build_meta_from_form(form):
@@ -91,6 +97,21 @@ def _render_index(images=None, form_data=None, error=None):
     )
 
 
+def _image_urls_by_prefix(output_prefix, output_format="jpg"):
+    if not isinstance(output_prefix, str) or not output_prefix.strip():
+        return []
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    generated = sorted(OUTPUT_DIR.glob(f"{output_prefix}_page_*.{output_format}"))
+    return [url_for("serve_output", filename=p.name) for p in generated]
+
+
+def _save_page_state(form_data=None, error=None, result_prefix=None):
+    session[SESSION_FORM_KEY] = dict(form_data or {})
+    session[SESSION_ERROR_KEY] = error
+    session[SESSION_RESULT_PREFIX_KEY] = result_prefix
+
+
 def generate_images(meta, content, paper_type=None, seed=None):
     fonts = [str(DEFAULT_FONT)]
     if not DEFAULT_FONT.exists():
@@ -121,12 +142,17 @@ def generate_images(meta, content, paper_type=None, seed=None):
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     generated = sorted(OUTPUT_DIR.glob(f"{output_prefix}_page_*.{output_format}"))
-    return [p.name for p in generated], used_paper_type
+    return [p.name for p in generated], used_paper_type, output_prefix
 
 
 @app.route("/", methods=["GET"])
 def index():
-    return _render_index(images=None, form_data={})
+    form_data = session.get(SESSION_FORM_KEY, {})
+    error = session.get(SESSION_ERROR_KEY)
+    result_prefix = session.get(SESSION_RESULT_PREFIX_KEY)
+    images = _image_urls_by_prefix(result_prefix)
+
+    return _render_index(images=images or None, form_data=form_data, error=error)
 
 
 @app.route("/generate", methods=["POST"])
@@ -139,15 +165,17 @@ def generate():
         form_data["paper_type"] = paper_type
 
     if not content:
-        return _render_index(images=None, error="会议正文不能为空。", form_data=form_data)
+        _save_page_state(form_data=form_data, error="会议正文不能为空。", result_prefix=None)
+        return redirect(url_for("index"))
 
     try:
         seed = int(seed_value) if seed_value else None
     except ValueError:
-        return _render_index(images=None, error="随机种子必须是整数。", form_data=form_data)
+        _save_page_state(form_data=form_data, error="随机种子必须是整数。", result_prefix=None)
+        return redirect(url_for("index"))
 
     try:
-        images, used_paper_type = generate_images(
+        _, used_paper_type, output_prefix = generate_images(
             _build_meta_from_form(request.form),
             content,
             paper_type=paper_type,
@@ -155,10 +183,11 @@ def generate():
         )
         form_data["paper_type"] = used_paper_type
     except Exception as exc:
-        return _render_index(images=None, error=f"生成失败: {exc}", form_data=form_data)
+        _save_page_state(form_data=form_data, error=f"生成失败: {exc}", result_prefix=None)
+        return redirect(url_for("index"))
 
-    image_urls = [url_for("serve_output", filename=name) for name in images]
-    return _render_index(images=image_urls, form_data=form_data)
+    _save_page_state(form_data=form_data, error=None, result_prefix=output_prefix)
+    return redirect(url_for("index"))
 
 
 @app.route("/output/<path:filename>", methods=["GET"])
