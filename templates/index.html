@@ -23,9 +23,14 @@
     }
 
     .wrap {
-      max-width: 1100px;
+      max-width: clamp(820px, 88vw, 980px);
       margin: 24px auto;
       padding: 0 16px;
+    }
+
+    .main-layout {
+      display: grid;
+      gap: 16px;
     }
 
     .panel {
@@ -36,6 +41,13 @@
       box-shadow: 0 10px 28px rgba(49, 92, 133, 0.14);
     }
 
+    .form-panel,
+    .result-panel {
+      width: 100%;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
     h1 {
       margin: 0 0 12px;
       font-size: 24px;
@@ -44,7 +56,7 @@
 
     .grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(2, 1fr);
       gap: 10px;
     }
 
@@ -96,11 +108,37 @@
       font-weight: 600;
     }
 
-    .images {
-      margin-top: 16px;
+    .images-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
       gap: 14px;
+      max-width: 760px;
+      margin: 0 auto;
+    }
+
+    .result-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 12px;
+    }
+
+    .secondary-btn {
+      background: #e8f3ff;
+      color: #25517b;
+      border: 1px solid #9fc3e8;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      text-decoration: none;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .secondary-btn:hover {
+      background: #dcedff;
+      color: #1e4265;
+      box-shadow: none;
+      transform: none;
     }
 
     .image-card {
@@ -109,6 +147,7 @@
       background: var(--surface);
       padding: 8px;
       box-shadow: 0 6px 18px rgba(72, 123, 170, 0.12);
+      min-width: 0;
     }
 
     .thumb-btn {
@@ -123,8 +162,8 @@
     .thumb-img {
       display: block;
       width: 100%;
-      max-width: 260px;
-      height: 340px;
+      max-width: 220px;
+      height: 290px;
       object-fit: contain;
       margin: 0 auto;
       border: 1px solid var(--line);
@@ -137,6 +176,12 @@
       font-size: 13px;
       color: #4b6f91;
       text-align: center;
+    }
+
+    .card-actions {
+      display: flex;
+      justify-content: center;
+      margin-top: 8px;
     }
 
     .lightbox {
@@ -181,6 +226,47 @@
       padding: 0;
     }
 
+    .lightbox-download {
+      position: absolute;
+      left: 12px;
+      top: 8px;
+      font-size: 13px;
+    }
+
+    .lightbox-nav {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      border: 1px solid #9dbde0;
+      background: rgba(234, 244, 255, 0.95);
+      color: #285783;
+      font-size: 20px;
+      font-weight: 700;
+      cursor: pointer;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2;
+    }
+
+    .lightbox-nav:hover {
+      background: #d9ebff;
+      box-shadow: none;
+      transform: translateY(-50%);
+    }
+
+    .lightbox-nav.prev {
+      left: 10px;
+    }
+
+    .lightbox-nav.next {
+      right: 10px;
+    }
+
     .lightbox-img {
       display: block;
       width: auto;
@@ -192,6 +278,44 @@
       background: var(--surface);
     }
 
+    @media (min-width: 1180px) {
+      .wrap {
+        max-width: min(1320px, 94vw);
+      }
+
+      .main-layout.has-images {
+        grid-template-columns: minmax(420px, 500px) minmax(0, 1fr);
+        align-items: stretch;
+        gap: 18px;
+      }
+
+      .main-layout.has-images > .panel {
+        min-width: 0;
+      }
+
+      .main-layout.has-images .form-panel,
+      .main-layout.has-images .result-panel {
+        margin: 0;
+        max-width: none;
+      }
+
+      .main-layout.has-images .form-panel {
+        position: static;
+      }
+
+      .main-layout.has-images .result-panel {
+        height: 100%;
+        overflow: hidden;
+      }
+
+      .main-layout.has-images .images-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        max-width: 660px;
+        height: 100%;
+        align-content: start;
+      }
+    }
+
     @media (max-width: 1024px) {
       .wrap {
         max-width: 920px;
@@ -201,12 +325,12 @@
         grid-template-columns: repeat(2, 1fr);
       }
 
-      .images {
+      .images-grid {
         grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
       }
 
       .thumb-img {
-        height: 310px;
+        height: 260px;
       }
     }
 
@@ -224,14 +348,14 @@
         grid-template-columns: 1fr;
       }
 
-      .images {
+      .images-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 10px;
       }
 
       .thumb-img {
         max-width: 100%;
-        height: 250px;
+        height: 220px;
       }
 
       .lightbox {
@@ -243,6 +367,19 @@
         max-height: 94vh;
         padding: 34px 10px 10px;
       }
+
+      .lightbox-nav {
+        width: 34px;
+        height: 34px;
+      }
+
+      .lightbox-nav.prev {
+        left: 6px;
+      }
+
+      .lightbox-nav.next {
+        right: 6px;
+      }
     }
 
     @media (max-width: 520px) {
@@ -250,19 +387,20 @@
         font-size: 20px;
       }
 
-      .images {
+      .images-grid {
         grid-template-columns: 1fr;
       }
 
       .thumb-img {
-        height: 220px;
+        height: 200px;
       }
     }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="panel">
+    <div class="main-layout{% if images %} has-images{% endif %}">
+    <div class="panel form-panel">
       <h1>会议记录手写生成</h1>
       <form method="post" action="/generate">
         <div class="grid">
@@ -318,21 +456,33 @@
     </div>
 
     {% if images %}
-    <div class="panel images">
-      {% for image in images %}
-      <div class="image-card">
-        <button type="button" class="thumb-btn" data-src="{{ image }}" aria-label="查看第{{ loop.index }}张大图">
-          <img class="thumb-img" src="{{ image }}" alt="生成结果 {{ loop.index }}" loading="lazy">
-        </button>
-        <p class="thumb-note">第 {{ loop.index }} 页（点击放大）</p>
+    <div class="panel result-panel">
+      <div class="result-toolbar">
+        <button type="button" class="secondary-btn" id="saveAllBtn">一键保存全部</button>
       </div>
-      {% endfor %}
+      <div class="images-grid">
+        {% for image in images %}
+        <div class="image-card">
+          <button type="button" class="thumb-btn" data-src="{{ image }}" aria-label="查看第{{ loop.index }}张大图">
+            <img class="thumb-img" src="{{ image }}" alt="生成结果 {{ loop.index }}" loading="lazy">
+          </button>
+          <p class="thumb-note">第 {{ loop.index }} 页（点击放大）</p>
+          <div class="card-actions">
+            <a class="secondary-btn" href="{{ image }}" download>保存本页</a>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
     </div>
     {% endif %}
+    </div>
   </div>
 
   <div class="lightbox" id="lightbox">
     <div class="lightbox-inner">
+      <button type="button" class="lightbox-nav prev" id="lightboxPrev" aria-label="上一张">‹</button>
+      <button type="button" class="lightbox-nav next" id="lightboxNext" aria-label="下一张">›</button>
+      <a class="secondary-btn lightbox-download" id="lightboxDownload" href="#" download>保存此图</a>
       <button type="button" class="lightbox-close" id="lightboxClose" aria-label="关闭预览">×</button>
       <img class="lightbox-img" id="lightboxImg" src="" alt="大图预览">
     </div>
@@ -343,15 +493,49 @@
       const lightbox = document.getElementById("lightbox");
       const lightboxImg = document.getElementById("lightboxImg");
       const closeBtn = document.getElementById("lightboxClose");
+      const prevBtn = document.getElementById("lightboxPrev");
+      const nextBtn = document.getElementById("lightboxNext");
+      const downloadBtn = document.getElementById("lightboxDownload");
+      const saveAllBtn = document.getElementById("saveAllBtn");
       const thumbButtons = document.querySelectorAll(".thumb-btn");
+      const imageItems = Array.from(thumbButtons).map((btn) => {
+        const img = btn.querySelector("img");
+        return {
+          src: btn.getAttribute("data-src") || "",
+          alt: img ? img.alt : "大图预览",
+        };
+      });
+      let currentIndex = 0;
 
-      if (!lightbox || !lightboxImg || !closeBtn || thumbButtons.length === 0) {
+      if (!lightbox || !lightboxImg || !closeBtn || !downloadBtn || thumbButtons.length === 0) {
         return;
       }
 
-      function openLightbox(src, altText) {
-        lightboxImg.src = src;
-        lightboxImg.alt = altText || "大图预览";
+      function getFileName(src, fallbackName) {
+        if (!src) {
+          return fallbackName;
+        }
+        const raw = src.split("?")[0].split("#")[0];
+        const name = raw.substring(raw.lastIndexOf("/") + 1);
+        return name || fallbackName;
+      }
+
+      function renderLightbox(index) {
+        if (imageItems.length === 0) {
+          return;
+        }
+        currentIndex = (index + imageItems.length) % imageItems.length;
+        const item = imageItems[currentIndex];
+        const fallbackName = `page_${currentIndex + 1}.jpg`;
+
+        lightboxImg.src = item.src;
+        lightboxImg.alt = item.alt;
+        downloadBtn.href = item.src;
+        downloadBtn.download = getFileName(item.src, fallbackName);
+      }
+
+      function openLightbox(index) {
+        renderLightbox(index);
         lightbox.classList.add("show");
       }
 
@@ -360,16 +544,54 @@
         lightboxImg.src = "";
       }
 
-      thumbButtons.forEach((btn) => {
+      function downloadBySrc(src, fallbackName) {
+        if (!src) {
+          return;
+        }
+        const link = document.createElement("a");
+        link.href = src;
+        link.download = getFileName(src, fallbackName);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+
+      thumbButtons.forEach((btn, index) => {
         btn.addEventListener("click", () => {
-          const src = btn.getAttribute("data-src");
-          const img = btn.querySelector("img");
-          const altText = img ? img.alt : "大图预览";
-          if (src) {
-            openLightbox(src, altText);
-          }
+          openLightbox(index);
         });
       });
+
+      if (prevBtn) {
+        prevBtn.addEventListener("click", () => {
+          renderLightbox(currentIndex - 1);
+        });
+      }
+
+      if (nextBtn) {
+        nextBtn.addEventListener("click", () => {
+          renderLightbox(currentIndex + 1);
+        });
+      }
+
+      if (saveAllBtn) {
+        saveAllBtn.addEventListener("click", () => {
+          imageItems.forEach((item, index) => {
+            setTimeout(() => {
+              downloadBySrc(item.src, `page_${index + 1}.jpg`);
+            }, index * 180);
+          });
+        });
+      }
+
+      if (imageItems.length <= 1) {
+        if (prevBtn) {
+          prevBtn.style.display = "none";
+        }
+        if (nextBtn) {
+          nextBtn.style.display = "none";
+        }
+      }
 
       closeBtn.addEventListener("click", closeLightbox);
       lightbox.addEventListener("click", (event) => {
@@ -378,8 +600,19 @@
         }
       });
       document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && lightbox.classList.contains("show")) {
+        if (!lightbox.classList.contains("show")) {
+          return;
+        }
+        if (event.key === "Escape") {
           closeLightbox();
+          return;
+        }
+        if (event.key === "ArrowLeft") {
+          renderLightbox(currentIndex - 1);
+          return;
+        }
+        if (event.key === "ArrowRight") {
+          renderLightbox(currentIndex + 1);
         }
       });
     })();
