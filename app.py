@@ -3,7 +3,7 @@ import random
 import uuid
 from pathlib import Path
 
-from flask import redirect, render_template, request, send_from_directory, session, url_for, Flask
+from flask import Flask, abort, redirect, render_template, request, send_from_directory, session, url_for
 
 from handwrite import (
     DEFAULT_PAPER_TYPE,
@@ -17,6 +17,7 @@ from handwrite import (
 
 BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = BASE_DIR / "output"
+PAPERS_DIR = BASE_DIR / "papers"
 DEFAULT_FONT = BASE_DIR / "fonts" / "font0.ttf"
 WEB_CONFIG_PATH = BASE_DIR / "config.yaml"
 
@@ -66,18 +67,71 @@ def _get_paper_options(config):
     if configured_default not in presets:
         configured_default = DEFAULT_PAPER_TYPE
 
-    return paper_types, configured_default
+    return paper_types, configured_default, presets
+
+
+def _resolve_paper_asset_url(path_value):
+    """将纸张资源路径解析为可访问 URL；失败返回空字符串"""
+    if not isinstance(path_value, str) or not path_value.strip():
+        return ""
+
+    paper_root = PAPERS_DIR.resolve()
+    candidate = Path(path_value)
+    if not candidate.is_absolute():
+        candidate = (BASE_DIR / candidate).resolve()
+    else:
+        candidate = candidate.resolve()
+
+    if not candidate.exists() or not candidate.is_file():
+        return ""
+
+    try:
+        rel_path = candidate.relative_to(paper_root).as_posix()
+    except ValueError:
+        return ""
+
+    return url_for("serve_paper_asset", filename=rel_path)
+
+
+def _build_paper_preview_items(presets):
+    """构建纸张预览映射：paper_type -> [{label, url}, ...]"""
+    preview_items = {}
+
+    for paper_type, preset in presets.items():
+        items = []
+        front_url = _resolve_paper_asset_url(preset.get("front", {}).get("bg_file"))
+        back_url = _resolve_paper_asset_url(preset.get("back", {}).get("bg_file"))
+
+        if front_url:
+            items.append({"label": "正面", "url": front_url})
+        if back_url:
+            items.append({"label": "背面", "url": back_url})
+
+        # 兼容旧配置：如果 front/back 都无效，再尝试单独 preview_file
+        if not items:
+            preview_url = _resolve_paper_asset_url(preset.get("preview_file"))
+            if preview_url:
+                items.append({"label": "预览", "url": preview_url})
+
+        if items:
+            preview_items[paper_type] = items
+
+    return preview_items
 
 
 def _render_index(images=None, form_data=None, error=None):
     form_data = dict(form_data or {})
     paper_types = [DEFAULT_PAPER_TYPE]
     default_paper_type = DEFAULT_PAPER_TYPE
+    paper_preview_map = {}
+    default_paper_previews = []
     config_error = None
 
     try:
         config = _load_web_config()
-        paper_types, default_paper_type = _get_paper_options(config)
+        paper_types, default_paper_type, presets = _get_paper_options(config)
+        paper_preview_map = _build_paper_preview_items(presets)
+        default_paper_previews = paper_preview_map.get(default_paper_type, [])
     except Exception as exc:
         config_error = f"配置加载失败: {exc}"
 
@@ -94,6 +148,8 @@ def _render_index(images=None, form_data=None, error=None):
         form_data=form_data,
         paper_types=paper_types,
         default_paper_type=default_paper_type,
+        paper_preview_map=paper_preview_map,
+        default_paper_previews=default_paper_previews,
     )
 
 
@@ -205,6 +261,22 @@ def generate():
 @app.route("/output/<path:filename>", methods=["GET"])
 def serve_output(filename):
     return send_from_directory(str(OUTPUT_DIR), filename)
+
+
+@app.route("/paper-assets/<path:filename>", methods=["GET"])
+def serve_paper_asset(filename):
+    paper_root = PAPERS_DIR.resolve()
+    target = (paper_root / filename).resolve()
+
+    try:
+        relative_name = target.relative_to(paper_root)
+    except ValueError:
+        abort(404)
+
+    if not target.exists() or not target.is_file():
+        abort(404)
+
+    return send_from_directory(str(paper_root), relative_name.as_posix())
 
 
 if __name__ == "__main__":
