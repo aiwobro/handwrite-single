@@ -335,6 +335,36 @@
       font-size: 13px;
     }
 
+    .lightbox-tools {
+      position: absolute;
+      left: 50%;
+      top: 8px;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      z-index: 3;
+    }
+
+    .lightbox-tools .secondary-btn {
+      padding: 6px 10px;
+      font-size: 12px;
+      line-height: 1.2;
+    }
+
+    .lightbox-tools .secondary-btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .lightbox-zoom-level {
+      min-width: 52px;
+      text-align: center;
+      font-size: 12px;
+      color: #2d5f8f;
+      font-weight: 700;
+    }
+
     .lightbox-nav {
       position: absolute;
       top: 50%;
@@ -369,15 +399,23 @@
       right: 10px;
     }
 
+    .lightbox-stage {
+      max-height: calc(92vh - 88px);
+      overflow: auto;
+      padding: 4px 42px 0;
+    }
+
     .lightbox-img {
       display: block;
       width: auto;
       max-width: 100%;
-      max-height: calc(92vh - 80px);
+      max-height: none;
       margin: 0 auto;
       border-radius: 10px;
       border: 1px solid var(--line);
       background: var(--surface);
+      transform-origin: top center;
+      transition: transform 0.16s ease;
     }
 
     @media (min-width: 1180px) {
@@ -479,7 +517,7 @@
       .lightbox-inner {
         width: 100%;
         max-height: 94vh;
-        padding: 34px 10px 10px;
+        padding: 40px 10px 10px;
       }
 
       .lightbox-nav {
@@ -493,6 +531,25 @@
 
       .lightbox-nav.next {
         right: 6px;
+      }
+
+      .lightbox-tools {
+        top: 6px;
+        gap: 4px;
+      }
+
+      .lightbox-tools .secondary-btn {
+        padding: 5px 8px;
+        font-size: 11px;
+      }
+
+      .lightbox-zoom-level {
+        min-width: 46px;
+      }
+
+      .lightbox-stage {
+        max-height: calc(94vh - 102px);
+        padding: 4px 28px 0;
       }
     }
 
@@ -622,8 +679,16 @@
       <button type="button" class="lightbox-nav prev" id="lightboxPrev" aria-label="上一张">‹</button>
       <button type="button" class="lightbox-nav next" id="lightboxNext" aria-label="下一张">›</button>
       <a class="secondary-btn lightbox-download" id="lightboxDownload" href="#" download>保存此图</a>
+      <div class="lightbox-tools">
+        <button type="button" class="secondary-btn" id="zoomOutBtn" aria-label="缩小图片">缩小</button>
+        <span class="lightbox-zoom-level" id="zoomLevelText">100%</span>
+        <button type="button" class="secondary-btn" id="zoomInBtn" aria-label="放大图片">放大</button>
+        <button type="button" class="secondary-btn" id="zoomResetBtn" aria-label="重置缩放">重置</button>
+      </div>
       <button type="button" class="lightbox-close" id="lightboxClose" aria-label="关闭预览">×</button>
-      <img class="lightbox-img" id="lightboxImg" src="" alt="大图预览">
+      <div class="lightbox-stage" id="lightboxStage">
+        <img class="lightbox-img" id="lightboxImg" src="" alt="大图预览">
+      </div>
     </div>
   </div>
 
@@ -680,6 +745,11 @@
       const prevBtn = document.getElementById("lightboxPrev");
       const nextBtn = document.getElementById("lightboxNext");
       const downloadBtn = document.getElementById("lightboxDownload");
+      const lightboxStage = document.getElementById("lightboxStage");
+      const zoomOutBtn = document.getElementById("zoomOutBtn");
+      const zoomInBtn = document.getElementById("zoomInBtn");
+      const zoomResetBtn = document.getElementById("zoomResetBtn");
+      const zoomLevelText = document.getElementById("zoomLevelText");
       const saveAllBtn = document.getElementById("saveAllBtn");
       const thumbButtons = document.querySelectorAll(".thumb-btn");
       const imageItems = Array.from(thumbButtons).map((btn) => {
@@ -690,9 +760,41 @@
         };
       });
       let currentIndex = 0;
+      let zoomLevel = 1;
+      const ZOOM_MIN = 0.6;
+      const ZOOM_MAX = 3;
+      const ZOOM_STEP = 0.2;
 
       if (!lightbox || !lightboxImg || !closeBtn || !downloadBtn || thumbButtons.length === 0) {
         return;
+      }
+
+      function updateZoomView() {
+        lightboxImg.style.transform = `scale(${zoomLevel})`;
+        if (zoomLevelText) {
+          zoomLevelText.textContent = `${Math.round(zoomLevel * 100)}%`;
+        }
+        if (zoomOutBtn) {
+          zoomOutBtn.disabled = zoomLevel <= ZOOM_MIN + 0.001;
+        }
+        if (zoomInBtn) {
+          zoomInBtn.disabled = zoomLevel >= ZOOM_MAX - 0.001;
+        }
+      }
+
+      function setZoom(nextZoom) {
+        const limited = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, nextZoom));
+        zoomLevel = Math.round(limited * 100) / 100;
+        updateZoomView();
+      }
+
+      function resetZoom() {
+        zoomLevel = 1;
+        if (lightboxStage) {
+          lightboxStage.scrollTop = 0;
+          lightboxStage.scrollLeft = 0;
+        }
+        updateZoomView();
       }
 
       function getFileName(src, fallbackName) {
@@ -716,6 +818,7 @@
         lightboxImg.alt = item.alt;
         downloadBtn.href = item.src;
         downloadBtn.download = getFileName(item.src, fallbackName);
+        resetZoom();
       }
 
       function openLightbox(index) {
@@ -725,6 +828,7 @@
 
       function closeLightbox() {
         lightbox.classList.remove("show");
+        resetZoom();
         lightboxImg.src = "";
       }
 
@@ -755,6 +859,24 @@
       if (nextBtn) {
         nextBtn.addEventListener("click", () => {
           renderLightbox(currentIndex + 1);
+        });
+      }
+
+      if (zoomOutBtn) {
+        zoomOutBtn.addEventListener("click", () => {
+          setZoom(zoomLevel - ZOOM_STEP);
+        });
+      }
+
+      if (zoomInBtn) {
+        zoomInBtn.addEventListener("click", () => {
+          setZoom(zoomLevel + ZOOM_STEP);
+        });
+      }
+
+      if (zoomResetBtn) {
+        zoomResetBtn.addEventListener("click", () => {
+          resetZoom();
         });
       }
 
@@ -797,8 +919,25 @@
         }
         if (event.key === "ArrowRight") {
           renderLightbox(currentIndex + 1);
+          return;
+        }
+        if (event.key === "+" || event.key === "=") {
+          event.preventDefault();
+          setZoom(zoomLevel + ZOOM_STEP);
+          return;
+        }
+        if (event.key === "-" || event.key === "_") {
+          event.preventDefault();
+          setZoom(zoomLevel - ZOOM_STEP);
+          return;
+        }
+        if (event.key === "0") {
+          event.preventDefault();
+          resetZoom();
         }
       });
+
+      updateZoomView();
     })();
   </script>
 </body>
