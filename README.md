@@ -15,7 +15,7 @@
 ## 安装依赖
 
 ```bash
-pip install Pillow numpy PyYAML
+pip install Pillow numpy PyYAML Flask
 ```
 
 ## 使用方法
@@ -50,6 +50,24 @@ conda run -n <你的环境名> python handwrite.py -c config.yaml
 ### 3. 输出
 
 生成的图片保存在 `./output/` 目录下。
+
+## Web 方式（Flask）
+
+项目提供了一个简洁网页入口，用户可以填写会议元数据与正文并在线生成结果图片。
+
+### 启动
+
+```bash
+python app.py
+```
+
+启动后访问：`http://127.0.0.1:5000`
+
+### 使用流程
+
+1. 在页面填写会议元数据（日期、地点、标题、主持人等）与正文。
+2. 点击“生成手写图片”。
+3. 页面会展示生成后的多页图片（文件也会保存在 `./output/` 目录下）。
 
 ## 常用参数
 

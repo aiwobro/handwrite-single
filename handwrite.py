@@ -182,9 +182,13 @@ class HandWriter:
             random.randint(220, 255)
         )
 
-        text_bbox = draw.textbbox((0, 0), char, font=font)
-        text_width = text_bbox[2] - text_bbox[0]
-        text_height = text_bbox[3] - text_bbox[1]
+        # Pillow 旧版本没有 textbbox，回退到 textsize 保持兼容性
+        if hasattr(draw, "textbbox"):
+            text_bbox = draw.textbbox((0, 0), char, font=font)
+            text_width = text_bbox[2] - text_bbox[0]
+            text_height = text_bbox[3] - text_bbox[1]
+        else:
+            text_width, text_height = draw.textsize(char, font=font)
         x = (img_size - text_width) // 2
         y = (img_size - text_height) // 2
 
