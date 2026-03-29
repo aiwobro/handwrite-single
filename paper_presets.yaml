@@ -1,0 +1,31 @@
+# 纸张预设注册表
+# - key: 纸张类型 ID（建议英文）
+# - front/back: 该纸张对应的背景图与排版坐标
+
+default:
+  display_name: "默认会议记录本"
+  front:
+    bg_file: "./papers/default/front.jpg"
+    start_y: 567
+    line_spacing: 71
+    font_size: 50
+    left_margin: 150
+    right_margin: 130
+    bottom_margin: 150
+    meta_position:
+      year:          {x: 818, y: 133, width: 140, height: 80}
+      month:         {x: 923, y: 138, width: 80,  height: 80}
+      day:           {x: 980, y: 138, width: 80,  height: 80}
+      venue:         {x: 577, y: 235, width: 220, height: 80}
+      meeting_title: {x: 303, y: 345, width: 700, height: 120}
+      recorder:      {x: 888, y: 350, width: 200, height: 80}
+      chairperson:   {x: 900, y: 273, width: 200, height: 80}
+      attendees:     {x: 309, y: 450, width: 800, height: 150}
+  back:
+    bg_file: "./papers/default/back.jpg"
+    start_y: 215
+    line_spacing: 71
+    font_size: 50
+    left_margin: 130
+    right_margin: 150
+    bottom_margin: 150

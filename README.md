@@ -82,7 +82,7 @@ python app.py
 
 - 生成结果文件保存在 `./output/` 目录。
 - Web 入口当前固定输出为 `jpg`，并使用随机前缀（形如 `web_xxxxx_page_1.jpg`）。
-- 网页端纸张类型选项来自 `config.yaml`：可通过 `paper_type` / `paper_presets` 控制默认值与可选项。
+- 网页端纸张类型选项来自 `paper_presets.yaml`，默认值由 `config.yaml` 的 `paper_type` 控制。
 - 开发模式默认监听 `127.0.0.1:5000`，并启用 `debug=True`（仅建议本地开发使用）。
 
 ## 常用参数
@@ -124,34 +124,8 @@ meta:
 # 纸张类型（默认值：default）
 paper_type: "default"
 
-# 可选：自定义纸张预设（新增或覆盖）
-# paper_presets:
-#   notebook_a:
-#     front:
-#       bg_file: "./papers/notebook_a_front.jpg"
-#       start_y: 567
-#       line_spacing: 71
-#       font_size: 50
-#       left_margin: 150
-#       right_margin: 130
-#       bottom_margin: 150
-#       meta_position:
-#         year:          {x: 818, y: 133, width: 140, height: 80}
-#         month:         {x: 923, y: 138, width: 80,  height: 80}
-#         day:           {x: 980, y: 138, width: 80,  height: 80}
-#         venue:         {x: 577, y: 235, width: 220, height: 80}
-#         meeting_title: {x: 303, y: 345, width: 700, height: 120}
-#         recorder:      {x: 888, y: 350, width: 200, height: 80}
-#         chairperson:   {x: 900, y: 273, width: 200, height: 80}
-#         attendees:     {x: 309, y: 450, width: 800, height: 150}
-#     back:
-#       bg_file: "./papers/notebook_a_back.jpg"
-#       start_y: 215
-#       line_spacing: 71
-#       font_size: 50
-#       left_margin: 130
-#       right_margin: 150
-#       bottom_margin: 150
+# 纸张预设统一在 paper_presets.yaml 中维护
+# 这里只需要选择 paper_type
 
 # 正文：指定外部文件
 content_file: "content.txt"
@@ -172,10 +146,48 @@ fonts:
 
 ## 纸张与布局配置说明
 
-脚本通过 `PAPER_PRESETS` 管理纸张类型，每个类型都绑定一套 `front/back` 配置（背景图 + 坐标参数）。
-默认使用 `paper_type: default`，即当前的 `page1.jpg` + `page2.jpg` 配置。
+纸张资源与坐标参数采用“资源目录 + 注册表”结构：
+
+```text
+papers/
+  default/
+    front.jpg
+    back.jpg
+paper_presets.yaml
+```
+
+- `papers/<paper_type>/`：存放该纸张的背景图（建议固定为 `front.jpg` / `back.jpg`）
+- `paper_presets.yaml`：维护 `paper_type -> front/back 坐标参数 + bg_file` 的映射
+- `config.yaml`：只负责选择当前 `paper_type`
+
+默认使用 `paper_type: default`，对应 `papers/default/front.jpg` + `papers/default/back.jpg`。
 
 若 `paper_type` 指定了不存在的类型，程序会报错并列出可选值（例如 `default, notebook_a`）。
+
+`paper_presets.yaml` 示例：
+
+```yaml
+default:
+  front:
+    bg_file: "./papers/default/front.jpg"
+    start_y: 567
+    line_spacing: 71
+    font_size: 50
+    left_margin: 150
+    right_margin: 130
+    bottom_margin: 150
+    meta_position:
+      year: {x: 818, y: 133, width: 140, height: 80}
+      # ...
+  back:
+    bg_file: "./papers/default/back.jpg"
+    start_y: 215
+    line_spacing: 71
+    font_size: 50
+    left_margin: 130
+    right_margin: 150
+    bottom_margin: 150
+```
 
 每个 `front/back` 配置中的公共参数如下：
 

@@ -12,13 +12,15 @@ except ImportError:
 
 # ================= 配置区域 =================
 
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_PAPER_TYPE = "default"
+PAPER_PRESETS_FILE = os.path.join(PROJECT_DIR, "paper_presets.yaml")
 
-# 纸张预设：每套纸张绑定前/后页背景图与对应坐标参数
-PAPER_PRESETS = {
+# 内置兜底预设：当 paper_presets.yaml 不存在时仍可运行
+DEFAULT_PAPER_PRESETS = {
     DEFAULT_PAPER_TYPE: {
         "front": {
-            "bg_file": "page1.jpg",
+            "bg_file": os.path.join(PROJECT_DIR, "papers", "default", "front.jpg"),
             "start_y": 567,
             "line_spacing": 71,
             "font_size": 50,
@@ -38,7 +40,7 @@ PAPER_PRESETS = {
             }
         },
         "back": {
-            "bg_file": "page2.jpg",
+            "bg_file": os.path.join(PROJECT_DIR, "papers", "default", "back.jpg"),
             "start_y": 215,
             "line_spacing": 71,
             "font_size": 50,
@@ -48,6 +50,9 @@ PAPER_PRESETS = {
         },
     }
 }
+
+# 运行时基准预设（由 build_paper_presets 合并外部注册表）
+PAPER_PRESETS = copy.deepcopy(DEFAULT_PAPER_PRESETS)
 
 # 向后兼容：保留原常量名给已有调用方（例如 app.py）
 CONFIG_FRONT = PAPER_PRESETS[DEFAULT_PAPER_TYPE]["front"]
@@ -634,32 +639,85 @@ def get_available_paper_types(presets):
     return sorted(presets.keys())
 
 
-def build_paper_presets(config):
-    """
-    构建最终可用纸张预设：
-    - 内置 PAPER_PRESETS 始终可用
-    - 可通过 config.paper_presets 追加/覆盖
-    """
-    presets = copy.deepcopy(PAPER_PRESETS)
-    custom_presets = config.get("paper_presets")
-    if custom_presets is None:
-        return presets
+def _normalize_paper_presets(raw_presets, source_name):
+    """校验并归一化纸张预设对象"""
+    if not isinstance(raw_presets, dict):
+        raise ValueError(f"{source_name} 必须是对象（key 为纸张类型，value 为配置）。")
 
-    if not isinstance(custom_presets, dict):
-        raise ValueError("`paper_presets` 必须是对象（key 为纸张类型，value 为配置）。")
-
-    for name, preset in custom_presets.items():
+    normalized = {}
+    for name, preset in raw_presets.items():
         if not isinstance(name, str) or not name.strip():
-            raise ValueError("`paper_presets` 中存在非法纸张类型名（必须是非空字符串）。")
+            raise ValueError(f"{source_name} 中存在非法纸张类型名（必须是非空字符串）。")
         if not isinstance(preset, dict):
-            raise ValueError(f"`paper_presets.{name}` 必须是对象。")
+            raise ValueError(f"{source_name}.{name} 必须是对象。")
 
         front = preset.get("front")
         back = preset.get("back")
         if not isinstance(front, dict) or not isinstance(back, dict):
-            raise ValueError(f"`paper_presets.{name}` 必须同时包含 `front` 和 `back` 对象。")
+            raise ValueError(f"{source_name}.{name} 必须同时包含 `front` 和 `back` 对象。")
 
-        presets[name.strip()] = copy.deepcopy(preset)
+        normalized[name.strip()] = copy.deepcopy(preset)
+
+    return normalized
+
+
+def _resolve_preset_bg_paths(preset, base_dir):
+    """将预设中的相对 bg_file 解析为绝对路径"""
+    resolved = copy.deepcopy(preset)
+    for side in ("front", "back"):
+        layout = resolved.get(side)
+        if not isinstance(layout, dict):
+            continue
+        bg = layout.get("bg_file")
+        if not isinstance(bg, str) or not bg.strip():
+            continue
+        if not os.path.isabs(bg):
+            layout["bg_file"] = os.path.normpath(os.path.join(base_dir, bg))
+    return resolved
+
+
+def load_paper_presets_registry(presets_path=PAPER_PRESETS_FILE):
+    """
+    从 paper_presets.yaml 读取纸张注册表。
+    兼容两种格式：
+    1) 根节点直接为纸张映射
+    2) 根节点包含 `paper_presets` 字段
+    """
+    if not os.path.exists(presets_path):
+        return {}
+
+    registry = load_config(presets_path)
+    if "paper_presets" in registry:
+        registry = registry.get("paper_presets")
+        if registry is None:
+            return {}
+
+    normalized = _normalize_paper_presets(registry, f"`{presets_path}`")
+    registry_dir = os.path.dirname(os.path.abspath(presets_path))
+    resolved = {}
+    for name, preset in normalized.items():
+        resolved[name] = _resolve_preset_bg_paths(preset, registry_dir)
+    return resolved
+
+
+def build_paper_presets(config):
+    """
+    构建最终可用纸张预设：
+    - 内置 DEFAULT_PAPER_PRESETS 始终可用
+    - 自动加载 paper_presets.yaml 中的纸张注册
+    - 可通过 config.paper_presets 临时追加/覆盖
+    """
+    presets = copy.deepcopy(DEFAULT_PAPER_PRESETS)
+
+    registry_presets = load_paper_presets_registry()
+    presets.update(registry_presets)
+
+    custom_presets = config.get("paper_presets")
+    if custom_presets is None:
+        return presets
+
+    normalized_custom = _normalize_paper_presets(custom_presets, "`config.paper_presets`")
+    presets.update(normalized_custom)
 
     return presets
 
