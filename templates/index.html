@@ -85,7 +85,7 @@
       max-width: 88px;
     }
 
-    input, textarea, button {
+    input, select, textarea, button {
       font: inherit;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -555,6 +555,14 @@
           <label class="field">
             <span>参会人</span>
             <input name="attendees" value="{{ form_data.get('attendees', '') }}" placeholder="王五，赵六">
+          </label>
+          <label class="field">
+            <span>纸张类型</span>
+            <select name="paper_type">
+              {% for paper_type_name in paper_types %}
+              <option value="{{ paper_type_name }}" {% if form_data.get('paper_type', default_paper_type) == paper_type_name %}selected{% endif %}>{{ paper_type_name }}</option>
+              {% endfor %}
+            </select>
           </label>
           <label class="field full">
             <span>随机种子（可选）</span>
