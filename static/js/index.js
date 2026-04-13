@@ -289,7 +289,14 @@
   }
 
   if (generateForm) {
-    generateForm.addEventListener("submit", () => {
+    generateForm.addEventListener("submit", (event) => {
+      if (generateForm.dataset.submitting === "1") {
+        return;
+      }
+
+      event.preventDefault();
+      generateForm.dataset.submitting = "1";
+
       if (generateBtn) {
         generateBtn.disabled = true;
         generateBtn.textContent = "生成中...";
@@ -303,6 +310,11 @@
       }
 
       startLoadingAnimation();
+
+      // Give the browser one paint window so the loading state is visible before navigation.
+      window.setTimeout(() => {
+        generateForm.submit();
+      }, 90);
     });
   }
 
