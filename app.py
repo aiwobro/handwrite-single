@@ -1,5 +1,6 @@
 import os
 import random
+import secrets
 import uuid
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from handwrite import (
     build_paper_presets,
     get_available_paper_types,
     load_config,
+    normalize_config_paths,
     resolve_paper_layout,
 )
 
@@ -20,13 +22,71 @@ OUTPUT_DIR = BASE_DIR / "output"
 PAPERS_DIR = BASE_DIR / "papers"
 DEFAULT_FONT = BASE_DIR / "fonts" / "font0.ttf"
 WEB_CONFIG_PATH = BASE_DIR / "config.yaml"
-
-app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "handwrite-dev-secret")
+SECRET_KEY_FILE = BASE_DIR / ".flask_secret_key"
 
 SESSION_FORM_KEY = "last_form_data"
 SESSION_ERROR_KEY = "last_error"
 SESSION_RESULT_PREFIX_KEY = "last_result_prefix"
+
+MAX_CONTENT_CHARS = 12000
+MAX_GENERATED_PAGES = 20
+SESSION_FIELD_LIMITS = {
+    "year": 16,
+    "month": 16,
+    "day": 16,
+    "venue": 128,
+    "meeting_title": 256,
+    "chairperson": 64,
+    "recorder": 64,
+    "attendees": 256,
+    "paper_type": 64,
+    "seed": 32,
+    "content": 900,
+}
+SESSION_PAYLOAD_MAX_BYTES = 2800
+
+
+def _get_int_env(name, default, minimum=1):
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+
+    return value if value >= minimum else default
+
+
+MAX_CONTENT_CHARS = _get_int_env("MAX_CONTENT_CHARS", MAX_CONTENT_CHARS, minimum=100)
+MAX_GENERATED_PAGES = _get_int_env("MAX_GENERATED_PAGES", MAX_GENERATED_PAGES, minimum=1)
+
+
+def _load_secret_key():
+    env_key = os.environ.get("FLASK_SECRET_KEY", "").strip()
+    if env_key:
+        return env_key
+
+    if SECRET_KEY_FILE.exists():
+        existing = SECRET_KEY_FILE.read_text(encoding="utf-8").strip()
+        if existing:
+            return existing
+
+    generated = secrets.token_urlsafe(48)
+    try:
+        SECRET_KEY_FILE.write_text(generated, encoding="utf-8")
+        os.chmod(SECRET_KEY_FILE, 0o600)
+    except OSError as exc:
+        raise RuntimeError(
+            "缺少 FLASK_SECRET_KEY，且无法自动写入本地密钥文件 .flask_secret_key。"
+            "请设置环境变量 FLASK_SECRET_KEY。"
+        ) from exc
+    return generated
+
+
+app = Flask(__name__)
+app.config["SECRET_KEY"] = _load_secret_key()
 
 
 def _build_meta_from_form(form):
@@ -50,7 +110,8 @@ def _copy_layout_with_absolute_bg(layout):
 
 def _load_web_config():
     if WEB_CONFIG_PATH.exists():
-        return load_config(str(WEB_CONFIG_PATH))
+        loaded = load_config(str(WEB_CONFIG_PATH))
+        return normalize_config_paths(loaded, str(WEB_CONFIG_PATH))
     return {}
 
 
@@ -132,8 +193,9 @@ def _render_index(images=None, form_data=None, error=None):
         paper_types, default_paper_type, presets = _get_paper_options(config)
         paper_preview_map = _build_paper_preview_items(presets)
         default_paper_previews = paper_preview_map.get(default_paper_type, [])
-    except Exception as exc:
-        config_error = f"配置加载失败: {exc}"
+    except Exception:
+        app.logger.exception("加载 Web 配置失败")
+        config_error = "配置加载失败，请检查服务器日志。"
 
     if not form_data.get("paper_type"):
         form_data["paper_type"] = default_paper_type
@@ -163,7 +225,7 @@ def _image_urls_by_prefix(output_prefix, output_format="jpg"):
 
 
 def _save_page_state(form_data=None, error=None, result_prefix=None):
-    session[SESSION_FORM_KEY] = dict(form_data or {})
+    session[SESSION_FORM_KEY] = _sanitize_form_data_for_session(form_data)
     session[SESSION_ERROR_KEY] = error
     session[SESSION_RESULT_PREFIX_KEY] = result_prefix
 
@@ -174,13 +236,34 @@ def _clear_page_state():
     session.pop(SESSION_RESULT_PREFIX_KEY, None)
 
 
+def _sanitize_form_data_for_session(form_data):
+    sanitized = {}
+    if not isinstance(form_data, dict):
+        return sanitized
+
+    for field, limit in SESSION_FIELD_LIMITS.items():
+        value = form_data.get(field, "")
+        if not isinstance(value, str):
+            continue
+        if field != "content":
+            value = value.strip()
+        if not value:
+            continue
+        sanitized[field] = value[:limit]
+
+    payload_size = len(str(sanitized).encode("utf-8"))
+    if payload_size > SESSION_PAYLOAD_MAX_BYTES and "content" in sanitized:
+        sanitized.pop("content", None)
+
+    return sanitized
+
+
 def generate_images(meta, content, paper_type=None, seed=None):
     fonts = [str(DEFAULT_FONT)]
     if not DEFAULT_FONT.exists():
         raise RuntimeError(f"字体文件不存在: {DEFAULT_FONT}")
 
-    if seed is not None:
-        random.seed(seed)
+    rng = random.Random(seed) if seed is not None else random.Random()
 
     config = _load_web_config()
     used_paper_type, config_front, config_back, _ = resolve_paper_layout(
@@ -196,6 +279,8 @@ def generate_images(meta, content, paper_type=None, seed=None):
         _copy_layout_with_absolute_bg(config_front),
         _copy_layout_with_absolute_bg(config_back),
         debug_box=False,
+        max_pages=MAX_GENERATED_PAGES,
+        rng=rng,
     )
     writer.write_meta(meta)
     if content:
@@ -235,6 +320,13 @@ def generate():
     if not content:
         _save_page_state(form_data=form_data, error="会议正文不能为空。", result_prefix=None)
         return redirect(url_for("index"))
+    if len(content) > MAX_CONTENT_CHARS:
+        _save_page_state(
+            form_data=form_data,
+            error=f"会议正文过长（最多 {MAX_CONTENT_CHARS} 字符）。请缩短后重试。",
+            result_prefix=None,
+        )
+        return redirect(url_for("index"))
 
     try:
         seed = int(seed_value) if seed_value else None
@@ -250,8 +342,12 @@ def generate():
             seed=seed,
         )
         form_data["paper_type"] = used_paper_type
-    except Exception as exc:
+    except ValueError as exc:
         _save_page_state(form_data=form_data, error=f"生成失败: {exc}", result_prefix=None)
+        return redirect(url_for("index"))
+    except Exception:
+        app.logger.exception("生成手写图片失败")
+        _save_page_state(form_data=form_data, error="生成失败：服务端异常，请稍后重试。", result_prefix=None)
         return redirect(url_for("index"))
 
     _save_page_state(form_data=form_data, error=None, result_prefix=output_prefix)
@@ -280,4 +376,4 @@ def serve_paper_asset(filename):
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    app.run(host="127.0.0.1", port=5000, debug=False)

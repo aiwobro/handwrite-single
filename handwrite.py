@@ -71,11 +71,13 @@ LAYOUT_REQUIRED_FIELDS = (
 # ===========================================
 
 class HandWriter:
-    def __init__(self, font_paths, config_front, config_back, debug_box=False):
+    def __init__(self, font_paths, config_front, config_back, debug_box=False, max_pages=None, rng=None):
         self.font_paths = font_paths
         self.config_front = config_front
         self.config_back = config_back
         self.debug_box = debug_box
+        self.max_pages = max_pages
+        self.rng = rng if rng is not None else random.Random()
 
         self.pages = []
         self.current_image = None
@@ -148,6 +150,8 @@ class HandWriter:
             self.pages.append(self.current_image)
 
         current_page_index = len(self.pages)
+        if self.max_pages is not None and current_page_index >= self.max_pages:
+            raise ValueError(f"生成页数超过限制（最多 {self.max_pages} 页）。请缩短正文后重试。")
 
         if current_page_index % 2 == 0:
             config = self.config_front
@@ -182,8 +186,8 @@ class HandWriter:
         self.cursor_y = config["start_y"]
 
     def get_random_font(self):
-        font_path = random.choice(self.font_paths)
-        random_size = self.base_size + random.randint(-2, 2)
+        font_path = self.rng.choice(self.font_paths)
+        random_size = self.base_size + self.rng.randint(-2, 2)
         try:
             return ImageFont.truetype(font_path, random_size)
         except OSError as e:
@@ -199,10 +203,10 @@ class HandWriter:
         draw = ImageDraw.Draw(img)
 
         ink_color = (
-            random.randint(30, 50),
-            random.randint(30, 50),
-            random.randint(30, 50),
-            random.randint(220, 255)
+            self.rng.randint(30, 50),
+            self.rng.randint(30, 50),
+            self.rng.randint(30, 50),
+            self.rng.randint(220, 255)
         )
 
         # Pillow 旧版本没有 textbbox，回退到 textsize 保持兼容性
@@ -216,7 +220,7 @@ class HandWriter:
         y = (img_size - text_height) // 2
 
         draw.text((x, y), char, font=font, fill=ink_color)
-        angle = random.uniform(-3, 3)
+        angle = self.rng.uniform(-3, 3)
         img = img.rotate(angle, resample=Image.BICUBIC, expand=1)
         return img, text_width
 
@@ -227,17 +231,17 @@ class HandWriter:
             self._load_new_page()
         else:
             self.cursor_y = next_line_y
-            self.cursor_x = self.margin_left + random.randint(0, 10)
+            self.cursor_x = self.margin_left + self.rng.randint(0, 10)
 
     def _char_paste_y(self, char, base_y):
         """计算字符纵向粘贴位置"""
-        offset_y = random.randint(-3, 3)
+        offset_y = self.rng.randint(-3, 3)
         paste_y = base_y + offset_y - int(self.base_size * 0.3)
 
         if char in self.horizontal_chars:
-            paste_y -= random.randint(12, 15)
+            paste_y -= self.rng.randint(12, 15)
         elif char in self.bottom_punct:
-            paste_y -= random.randint(12, 18)
+            paste_y -= self.rng.randint(12, 18)
 
         return paste_y
 
@@ -274,7 +278,7 @@ class HandWriter:
             font = self.get_random_font()
             char_img, char_w = self.draw_char_image(ch, font)
             kerning_factor = 0.76
-            random_jitter = random.randint(-3, 3)
+            random_jitter = self.rng.randint(-3, 3)
             advance = max(1, int(char_w * kerning_factor) + random_jitter)
             glyphs.append({"char": ch, "img": char_img, "advance": advance})
             width += advance
@@ -354,7 +358,7 @@ class HandWriter:
                     char_img, char_w = self.draw_char_image(char, font)
 
                     kerning_factor = 0.76
-                    actual_width = int(char_w * kerning_factor) + random.randint(-1, 2)
+                    actual_width = int(char_w * kerning_factor) + self.rng.randint(-1, 2)
 
                     if local_x + actual_width > box_right:
                         local_x = cfg["x"]
@@ -364,14 +368,14 @@ class HandWriter:
                         print(f"  字段 [{key}] 内容过长，已截断。")
                         break
 
-                    offset_y = random.randint(-2, 2)
+                    offset_y = self.rng.randint(-2, 2)
 
                     if char in self.horizontal_chars:
                         paste_y = local_y + offset_y - int(self.base_size * 0.3)
-                        paste_y -= random.randint(12, 15)
+                        paste_y -= self.rng.randint(12, 15)
                     elif char in self.bottom_punct:
                         paste_y = local_y + offset_y - int(self.base_size * 0.3)
-                        paste_y -= random.randint(12, 18)
+                        paste_y -= self.rng.randint(12, 18)
                     else:
                         paste_y = local_y + offset_y - int(self.base_size * 0.3)
 
@@ -676,6 +680,49 @@ def _resolve_preset_bg_paths(preset, base_dir):
     return resolved
 
 
+def _resolve_path_from_base(path_value, base_dir):
+    if not isinstance(path_value, str) or not path_value.strip():
+        return path_value
+    if os.path.isabs(path_value):
+        return os.path.normpath(path_value)
+    return os.path.normpath(os.path.join(base_dir, path_value))
+
+
+def normalize_config_paths(config, config_path):
+    """
+    将配置中的相对路径统一解析为“相对配置文件目录”。
+    主要处理：
+    - fonts
+    - content_file
+    - config.paper_presets.*.front/back.bg_file
+    """
+    normalized = copy.deepcopy(config)
+    config_dir = os.path.dirname(os.path.abspath(config_path))
+
+    fonts = normalized.get("fonts")
+    if isinstance(fonts, list):
+        normalized["fonts"] = [
+            _resolve_path_from_base(fp, config_dir) if isinstance(fp, str) else fp
+            for fp in fonts
+        ]
+
+    content_file = normalized.get("content_file")
+    if isinstance(content_file, str):
+        normalized["content_file"] = _resolve_path_from_base(content_file, config_dir)
+
+    custom_presets = normalized.get("paper_presets")
+    if isinstance(custom_presets, dict):
+        resolved_presets = {}
+        for name, preset in custom_presets.items():
+            if isinstance(preset, dict):
+                resolved_presets[name] = _resolve_preset_bg_paths(preset, config_dir)
+            else:
+                resolved_presets[name] = preset
+        normalized["paper_presets"] = resolved_presets
+
+    return normalized
+
+
 def load_paper_presets_registry(presets_path=PAPER_PRESETS_FILE):
     """
     从 paper_presets.yaml 读取纸张注册表。
@@ -756,7 +803,7 @@ def validate_config(config, config_front, config_back, paper_type):
     warnings = []
     errors = []
 
-    fonts = config.get("fonts", ["./fonts/font0.ttf"])
+    fonts = config.get("fonts", [os.path.join(PROJECT_DIR, "fonts", "font0.ttf")])
     if not isinstance(fonts, list) or not fonts:
         errors.append("`fonts` 必须是非空列表。")
     else:
@@ -893,6 +940,7 @@ if __name__ == "__main__":
         # 加载配置
         print(f"正在读取配置文件 {args.config} ...")
         config = load_config(args.config)
+        config = normalize_config_paths(config, args.config)
     except Exception as e:
         print(f"【错误】配置读取失败：{e}")
         sys.exit(1)
@@ -921,12 +969,12 @@ if __name__ == "__main__":
         print(f"配置检查通过。可选纸张类型：{choices}")
         sys.exit(0)
 
+    rng = random.Random(args.seed) if args.seed is not None else random.Random()
     if args.seed is not None:
-        random.seed(args.seed)
         print(f"已设置随机种子: {args.seed}")
 
     # 字体路径
-    fonts = config.get("fonts", ["./fonts/font0.ttf"])
+    fonts = config.get("fonts", [os.path.join(PROJECT_DIR, "fonts", "font0.ttf")])
 
     # 获取正文内容
     content = ""
@@ -950,7 +998,13 @@ if __name__ == "__main__":
     output_format = output_config.get("format", "jpg")
 
     try:
-        writer = HandWriter(fonts, config_front, config_back, debug_box=args.debug_box)
+        writer = HandWriter(
+            fonts,
+            config_front,
+            config_back,
+            debug_box=args.debug_box,
+            rng=rng,
+        )
 
         if meta_info:
             writer.write_meta(meta_info)

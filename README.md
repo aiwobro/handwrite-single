@@ -85,7 +85,9 @@ python app.py
 - 生成结果文件保存在 `./output/` 目录。
 - Web 入口当前固定输出为 `jpg`，并使用随机前缀（形如 `web_xxxxx_page_1.jpg`）。
 - 网页端纸张类型选项来自 `paper_presets.yaml`，默认值由 `config.yaml` 的 `paper_type` 控制。
-- 开发模式默认监听 `127.0.0.1:5000`，并启用 `debug=True`（仅建议本地开发使用）。
+- 默认监听 `127.0.0.1:5000`，当前配置为 `debug=False`。
+- 建议在生产环境设置 `FLASK_SECRET_KEY`；未设置时程序会自动生成并保存在项目根目录 `.flask_secret_key`。
+- Web 端默认限制正文长度（`MAX_CONTENT_CHARS`，默认 `12000`）和最大页数（`MAX_GENERATED_PAGES`，默认 `20`），可通过环境变量调整。
 
 ## 常用参数
 

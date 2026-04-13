@@ -3,6 +3,7 @@ output/
 
 # 用户配置文件（模板用 config.example.yaml）
 config.yaml
+.flask_secret_key
 
 # Python
 __pycache__/
