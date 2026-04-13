@@ -44,6 +44,7 @@
   let lightboxItems = [];
   let currentIndex = 0;
   let zoomLevel = 1;
+  let isSubmitting = false;
 
   function updateContentCount() {
     if (!contentInput || !contentCount) {
@@ -155,6 +156,20 @@
       loadingFill.style.width = `${progressValue}%`;
       loadingPercent.textContent = `${progressValue}%`;
     }, 340);
+  }
+
+  function stopLoadingAnimation() {
+    if (progressTimer) {
+      window.clearInterval(progressTimer);
+      progressTimer = null;
+    }
+
+    if (!generationPreview) {
+      return;
+    }
+
+    generationPreview.classList.remove("show");
+    generationPreview.setAttribute("aria-hidden", "true");
   }
 
   function getVisibleThumbButtons(scope) {
@@ -289,13 +304,13 @@
   }
 
   if (generateForm) {
-    generateForm.addEventListener("submit", (event) => {
-      if (generateForm.dataset.submitting === "1") {
+    generateForm.addEventListener("submit", async (event) => {
+      if (isSubmitting) {
         return;
       }
 
       event.preventDefault();
-      generateForm.dataset.submitting = "1";
+      isSubmitting = true;
 
       if (generateBtn) {
         generateBtn.disabled = true;
@@ -310,11 +325,53 @@
       }
 
       startLoadingAnimation();
+      const action = generateForm.getAttribute("action") || window.location.href;
+      const method = (generateForm.getAttribute("method") || "POST").toUpperCase();
+      const formData = new FormData(generateForm);
 
-      // Give the browser one paint window so the loading state is visible before navigation.
-      window.setTimeout(() => {
-        generateForm.submit();
-      }, 90);
+      try {
+        const response = await fetch(action, {
+          method,
+          body: formData,
+          credentials: "same-origin",
+          redirect: "follow",
+        });
+        const html = await response.text();
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        if (progressTimer) {
+          window.clearInterval(progressTimer);
+          progressTimer = null;
+        }
+        if (loadingFill && loadingPercent) {
+          loadingFill.style.width = "100%";
+          loadingPercent.textContent = "100%";
+        }
+
+        document.open();
+        document.write(html);
+        document.close();
+      } catch (error) {
+        console.error("提交生成请求失败:", error);
+        isSubmitting = false;
+        stopLoadingAnimation();
+
+        if (generateBtn) {
+          generateBtn.disabled = false;
+          generateBtn.textContent = "生成手写图片";
+        }
+        if (paperPreviewPanel) {
+          paperPreviewPanel.hidden = false;
+        }
+        if (generatedResultPanel) {
+          generatedResultPanel.hidden = false;
+        }
+
+        window.alert("生成请求失败，请检查网络或稍后重试。");
+      }
     });
   }
 
