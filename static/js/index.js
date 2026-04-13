@@ -1,353 +1,421 @@
 (function () {
-      const generateForm = document.getElementById("generateForm");
-      const generateBtn = document.getElementById("generateBtn");
-      const generationPreview = document.getElementById("generationPreview");
-      const paperPreviewPanel = document.getElementById("paperPreviewPanel");
-      const generatedResultPanel = document.getElementById("generatedResultPanel");
-      const loadingFill = document.getElementById("loadingFill");
-      const loadingPercent = document.getElementById("loadingPercent");
-      const paperTypeSelect = document.querySelector('select[name="paper_type"]');
-      const paperPreviewGrid = document.getElementById("paperPreviewGrid");
-      const paperPreviewEmpty = document.getElementById("paperPreviewEmpty");
-      const pageData = window.__INDEX_PAGE_DATA || {};
-      const paperPreviewMap = pageData.paperPreviewMap && typeof pageData.paperPreviewMap === "object"
-        ? pageData.paperPreviewMap
-        : {};
-      const defaultPaperPreviews = Array.isArray(pageData.defaultPaperPreviews)
-        ? pageData.defaultPaperPreviews
-        : [];
+  const generateForm = document.getElementById("generateForm");
+  const generateBtn = document.getElementById("generateBtn");
+  const generationPreview = document.getElementById("generationPreview");
+  const loadingFill = document.getElementById("loadingFill");
+  const loadingPercent = document.getElementById("loadingPercent");
 
-      function getPaperPreviewItems() {
-        const selectedType = paperTypeSelect ? paperTypeSelect.value || "" : "";
-        const selectedItems = paperPreviewMap[selectedType];
-        if (Array.isArray(selectedItems) && selectedItems.length) {
-          return selectedItems;
-        }
-        if (Array.isArray(defaultPaperPreviews) && defaultPaperPreviews.length) {
-          return defaultPaperPreviews;
-        }
-        return [];
-      }
+  const paperTypeSelect = document.getElementById("paperTypeSelect");
+  const paperPreviewPanel = document.getElementById("paperPreviewPanel");
+  const paperPreviewGrid = document.getElementById("paperPreviewGrid");
+  const paperPreviewEmpty = document.getElementById("paperPreviewEmpty");
+  const generatedResultPanel = document.getElementById("generatedResultPanel");
 
-      function buildPaperPreviewCard(item, index) {
-        const card = document.createElement("div");
-        card.className = "image-card";
+  const contentInput = document.getElementById("contentInput");
+  const contentCount = document.getElementById("contentCount");
 
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "thumb-btn";
-        button.setAttribute("data-src", item.url || "");
-        button.setAttribute("aria-label", `查看纸张${item.label || index + 1}大图`);
+  const lightbox = document.getElementById("lightbox");
+  const lightboxImg = document.getElementById("lightboxImg");
+  const lightboxClose = document.getElementById("lightboxClose");
+  const lightboxPrev = document.getElementById("lightboxPrev");
+  const lightboxNext = document.getElementById("lightboxNext");
+  const lightboxDownload = document.getElementById("lightboxDownload");
+  const lightboxStage = document.getElementById("lightboxStage");
+  const zoomOutBtn = document.getElementById("zoomOutBtn");
+  const zoomInBtn = document.getElementById("zoomInBtn");
+  const zoomResetBtn = document.getElementById("zoomResetBtn");
+  const zoomLevelText = document.getElementById("zoomLevelText");
+  const saveAllBtn = document.getElementById("saveAllBtn");
 
-        const image = document.createElement("img");
-        image.className = "thumb-img";
-        image.src = item.url || "";
-        image.alt = `纸张${item.label || index + 1}预览`;
-        image.loading = "lazy";
-        button.appendChild(image);
+  const pageData = window.__INDEX_PAGE_DATA || {};
+  const paperPreviewMap = pageData.paperPreviewMap && typeof pageData.paperPreviewMap === "object"
+    ? pageData.paperPreviewMap
+    : {};
+  const defaultPaperPreviews = Array.isArray(pageData.defaultPaperPreviews)
+    ? pageData.defaultPaperPreviews
+    : [];
 
-        const note = document.createElement("p");
-        note.className = "thumb-note";
-        note.textContent = `${item.label || `第${index + 1}页`}（点击放大）`;
+  const ZOOM_MIN = 0.6;
+  const ZOOM_MAX = 3;
+  const ZOOM_STEP = 0.2;
 
-        card.appendChild(button);
-        card.appendChild(note);
-        return card;
-      }
+  let progressTimer = null;
+  let progressValue = 0;
+  let lightboxItems = [];
+  let currentIndex = 0;
+  let zoomLevel = 1;
 
-      function renderPaperPreview() {
-        if (!paperPreviewGrid || !paperPreviewEmpty) {
-          return;
-        }
+  function updateContentCount() {
+    if (!contentInput || !contentCount) {
+      return;
+    }
+    const value = contentInput.value || "";
+    contentCount.textContent = `${value.length} 字`;
+  }
 
-        const items = getPaperPreviewItems();
-        paperPreviewGrid.textContent = "";
+  function getPaperPreviewItems() {
+    const selectedType = paperTypeSelect ? (paperTypeSelect.value || "") : "";
+    const selectedItems = paperPreviewMap[selectedType];
+    if (Array.isArray(selectedItems) && selectedItems.length) {
+      return selectedItems;
+    }
+    if (Array.isArray(defaultPaperPreviews) && defaultPaperPreviews.length) {
+      return defaultPaperPreviews;
+    }
+    return [];
+  }
 
-        if (!items.length) {
-          paperPreviewGrid.hidden = true;
-          paperPreviewEmpty.hidden = false;
-          return;
-        }
+  function buildPaperPreviewCard(item, index) {
+    const article = document.createElement("article");
+    article.className = "image-item";
 
-        items.forEach((item, index) => {
-          if (!item || !item.url) {
-            return;
-          }
-          paperPreviewGrid.appendChild(buildPaperPreviewCard(item, index));
-        });
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "thumb-btn";
+    button.setAttribute("data-src", item.url || "");
+    button.setAttribute("aria-label", `查看纸张${item.label || index + 1}大图`);
 
-        const hasCards = paperPreviewGrid.childElementCount > 0;
-        paperPreviewGrid.hidden = !hasCards;
-        paperPreviewEmpty.hidden = hasCards;
-      }
+    const image = document.createElement("img");
+    image.className = "thumb-img";
+    image.src = item.url || "";
+    image.alt = `纸张${item.label || index + 1}预览`;
+    image.loading = "lazy";
 
-      if (paperTypeSelect) {
-        paperTypeSelect.addEventListener("change", renderPaperPreview);
-      }
+    const meta = document.createElement("div");
+    meta.className = "thumb-meta";
 
-      renderPaperPreview();
+    const label = document.createElement("p");
+    label.textContent = item.label || `第 ${index + 1} 页`;
+    meta.appendChild(label);
 
-      if (generateForm && generationPreview && loadingFill && loadingPercent) {
-        let progressValue = 0;
-        let progressTimer = null;
+    button.appendChild(image);
+    article.appendChild(button);
+    article.appendChild(meta);
 
-        function tickProgress() {
-          const cap = 94;
-          if (progressValue >= cap) {
-            return;
-          }
-          const remaining = cap - progressValue;
-          const step = Math.max(1, Math.ceil(remaining * (0.08 + Math.random() * 0.08)));
-          progressValue = Math.min(cap, progressValue + step);
-          loadingFill.style.width = `${progressValue}%`;
-          loadingPercent.textContent = `${progressValue}%`;
-        }
+    return article;
+  }
 
-        generateForm.addEventListener("submit", () => {
-          progressValue = 6;
-          loadingFill.style.width = `${progressValue}%`;
-          loadingPercent.textContent = `${progressValue}%`;
+  function renderPaperPreview() {
+    if (!paperPreviewGrid || !paperPreviewEmpty) {
+      return;
+    }
 
-          if (paperPreviewPanel) {
-            paperPreviewPanel.hidden = true;
-          }
-          if (generatedResultPanel) {
-            generatedResultPanel.hidden = true;
-          }
-          generationPreview.classList.add("show");
-          generationPreview.setAttribute("aria-hidden", "false");
-          if (generateBtn) {
-            generateBtn.disabled = true;
-            generateBtn.textContent = "生成中...";
-          }
+    const items = getPaperPreviewItems();
+    paperPreviewGrid.textContent = "";
 
-          if (progressTimer) {
-            window.clearInterval(progressTimer);
-          }
-          progressTimer = window.setInterval(tickProgress, 360);
-        });
-      }
+    if (!items.length) {
+      paperPreviewGrid.hidden = true;
+      paperPreviewEmpty.hidden = false;
+      return;
+    }
 
-      const lightbox = document.getElementById("lightbox");
-      const lightboxImg = document.getElementById("lightboxImg");
-      const closeBtn = document.getElementById("lightboxClose");
-      const prevBtn = document.getElementById("lightboxPrev");
-      const nextBtn = document.getElementById("lightboxNext");
-      const downloadBtn = document.getElementById("lightboxDownload");
-      const lightboxStage = document.getElementById("lightboxStage");
-      const zoomOutBtn = document.getElementById("zoomOutBtn");
-      const zoomInBtn = document.getElementById("zoomInBtn");
-      const zoomResetBtn = document.getElementById("zoomResetBtn");
-      const zoomLevelText = document.getElementById("zoomLevelText");
-      const saveAllBtn = document.getElementById("saveAllBtn");
-      let imageItems = [];
-      let currentIndex = 0;
-      let zoomLevel = 1;
-      const ZOOM_MIN = 0.6;
-      const ZOOM_MAX = 3;
-      const ZOOM_STEP = 0.2;
-
-      if (!lightbox || !lightboxImg || !closeBtn || !downloadBtn) {
+    items.forEach((item, index) => {
+      if (!item || !item.url) {
         return;
       }
+      paperPreviewGrid.appendChild(buildPaperPreviewCard(item, index));
+    });
 
-      function collectImageItems() {
-        const buttons = Array.from(document.querySelectorAll(".thumb-btn"));
-        imageItems = buttons
-          .map((btn) => {
-            const img = btn.querySelector("img");
-            return {
-              src: btn.getAttribute("data-src") || "",
-              alt: img ? img.alt : "大图预览",
-            };
-          })
-          .filter((item) => item.src);
-      }
+    const hasCards = paperPreviewGrid.childElementCount > 0;
+    paperPreviewGrid.hidden = !hasCards;
+    paperPreviewEmpty.hidden = hasCards;
 
-      function updateNavVisibility() {
-        const visible = imageItems.length > 1;
-        if (prevBtn) {
-          prevBtn.style.display = visible ? "flex" : "none";
-        }
-        if (nextBtn) {
-          nextBtn.style.display = visible ? "flex" : "none";
-        }
-      }
-
-      function updateZoomView() {
-        lightboxImg.style.transform = `scale(${zoomLevel})`;
-        if (zoomLevelText) {
-          zoomLevelText.textContent = `${Math.round(zoomLevel * 100)}%`;
-        }
-        if (zoomOutBtn) {
-          zoomOutBtn.disabled = zoomLevel <= ZOOM_MIN + 0.001;
-        }
-        if (zoomInBtn) {
-          zoomInBtn.disabled = zoomLevel >= ZOOM_MAX - 0.001;
-        }
-      }
-
-      function setZoom(nextZoom) {
-        const limited = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, nextZoom));
-        zoomLevel = Math.round(limited * 100) / 100;
-        updateZoomView();
-      }
-
-      function resetZoom() {
-        zoomLevel = 1;
-        if (lightboxStage) {
-          lightboxStage.scrollTop = 0;
-          lightboxStage.scrollLeft = 0;
-        }
-        updateZoomView();
-      }
-
-      function getFileName(src, fallbackName) {
-        if (!src) {
-          return fallbackName;
-        }
-        const raw = src.split("?")[0].split("#")[0];
-        const name = raw.substring(raw.lastIndexOf("/") + 1);
-        return name || fallbackName;
-      }
-
-      function renderLightbox(index) {
-        if (imageItems.length === 0) {
-          return;
-        }
-        currentIndex = (index + imageItems.length) % imageItems.length;
-        const item = imageItems[currentIndex];
-        const fallbackName = `page_${currentIndex + 1}.jpg`;
-
-        lightboxImg.src = item.src;
-        lightboxImg.alt = item.alt;
-        downloadBtn.href = item.src;
-        downloadBtn.download = getFileName(item.src, fallbackName);
-        resetZoom();
-      }
-
-      function openLightbox(index) {
-        collectImageItems();
-        if (imageItems.length === 0) {
-          return;
-        }
-        updateNavVisibility();
-        renderLightbox(index);
-        lightbox.classList.add("show");
-      }
-
-      function closeLightbox() {
-        lightbox.classList.remove("show");
-        resetZoom();
-        lightboxImg.src = "";
-      }
-
-      function downloadBySrc(src, fallbackName) {
-        if (!src) {
-          return;
-        }
-        const link = document.createElement("a");
-        link.href = src;
-        link.download = getFileName(src, fallbackName);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      }
-
-      document.addEventListener("click", (event) => {
-        const thumbBtn = event.target.closest(".thumb-btn");
-        if (!thumbBtn) {
-          return;
-        }
-        const buttons = Array.from(document.querySelectorAll(".thumb-btn"));
-        const index = buttons.indexOf(thumbBtn);
-        if (index < 0) {
-          return;
-        }
-        openLightbox(index);
+    if (hasCards) {
+      const cards = paperPreviewGrid.querySelectorAll(".image-item");
+      cards.forEach((card, index) => {
+        card.style.animation = `revealUp 0.4s ease ${index * 0.04}s both`;
       });
+    }
+  }
 
-      if (prevBtn) {
-        prevBtn.addEventListener("click", () => {
-          renderLightbox(currentIndex - 1);
-        });
+  function startLoadingAnimation() {
+    if (!generationPreview || !loadingFill || !loadingPercent) {
+      return;
+    }
+
+    progressValue = 7;
+    loadingFill.style.width = `${progressValue}%`;
+    loadingPercent.textContent = `${progressValue}%`;
+
+    generationPreview.classList.add("show");
+    generationPreview.setAttribute("aria-hidden", "false");
+
+    if (progressTimer) {
+      window.clearInterval(progressTimer);
+    }
+
+    progressTimer = window.setInterval(() => {
+      const cap = 94;
+      if (progressValue >= cap) {
+        return;
+      }
+      const remain = cap - progressValue;
+      const step = Math.max(1, Math.ceil(remain * (0.08 + Math.random() * 0.08)));
+      progressValue = Math.min(cap, progressValue + step);
+      loadingFill.style.width = `${progressValue}%`;
+      loadingPercent.textContent = `${progressValue}%`;
+    }, 340);
+  }
+
+  function getVisibleThumbButtons(scope) {
+    const root = scope || document;
+    return Array.from(root.querySelectorAll(".thumb-btn")).filter((btn) => {
+      const src = btn.getAttribute("data-src");
+      return src && btn.offsetParent !== null;
+    });
+  }
+
+  function getFileName(src, fallbackName) {
+    if (!src) {
+      return fallbackName;
+    }
+    const raw = src.split("?")[0].split("#")[0];
+    const name = raw.slice(raw.lastIndexOf("/") + 1);
+    return name || fallbackName;
+  }
+
+  function updateNavVisibility() {
+    const visible = lightboxItems.length > 1;
+    if (lightboxPrev) {
+      lightboxPrev.style.display = visible ? "flex" : "none";
+    }
+    if (lightboxNext) {
+      lightboxNext.style.display = visible ? "flex" : "none";
+    }
+  }
+
+  function updateZoomView() {
+    if (!lightboxImg) {
+      return;
+    }
+
+    lightboxImg.style.transform = `scale(${zoomLevel})`;
+
+    if (zoomLevelText) {
+      zoomLevelText.textContent = `${Math.round(zoomLevel * 100)}%`;
+    }
+
+    if (zoomOutBtn) {
+      zoomOutBtn.disabled = zoomLevel <= ZOOM_MIN + 0.001;
+    }
+
+    if (zoomInBtn) {
+      zoomInBtn.disabled = zoomLevel >= ZOOM_MAX - 0.001;
+    }
+  }
+
+  function setZoom(nextZoom) {
+    const limited = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, nextZoom));
+    zoomLevel = Math.round(limited * 100) / 100;
+    updateZoomView();
+  }
+
+  function resetZoom() {
+    zoomLevel = 1;
+    if (lightboxStage) {
+      lightboxStage.scrollTop = 0;
+      lightboxStage.scrollLeft = 0;
+    }
+    updateZoomView();
+  }
+
+  function renderLightbox(index) {
+    if (!lightboxItems.length || !lightboxImg || !lightboxDownload) {
+      return;
+    }
+
+    currentIndex = (index + lightboxItems.length) % lightboxItems.length;
+    const item = lightboxItems[currentIndex];
+    const fallbackName = `page_${currentIndex + 1}.jpg`;
+
+    lightboxImg.src = item.src;
+    lightboxImg.alt = item.alt || "大图预览";
+    lightboxDownload.href = item.src;
+    lightboxDownload.download = getFileName(item.src, fallbackName);
+
+    resetZoom();
+  }
+
+  function openLightbox(buttons, index) {
+    if (!lightbox || !buttons.length) {
+      return;
+    }
+
+    lightboxItems = buttons.map((btn) => {
+      const img = btn.querySelector("img");
+      return {
+        src: btn.getAttribute("data-src") || "",
+        alt: img ? img.alt : "大图预览",
+      };
+    }).filter((item) => item.src);
+
+    if (!lightboxItems.length) {
+      return;
+    }
+
+    updateNavVisibility();
+    renderLightbox(index);
+    lightbox.classList.add("show");
+  }
+
+  function closeLightbox() {
+    if (!lightbox || !lightboxImg) {
+      return;
+    }
+
+    lightbox.classList.remove("show");
+    lightboxImg.src = "";
+    resetZoom();
+  }
+
+  function downloadBySrc(src, fallbackName) {
+    if (!src) {
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = src;
+    link.download = getFileName(src, fallbackName);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  if (paperTypeSelect) {
+    paperTypeSelect.addEventListener("change", renderPaperPreview);
+  }
+
+  if (contentInput) {
+    contentInput.addEventListener("input", updateContentCount);
+  }
+
+  if (generateForm) {
+    generateForm.addEventListener("submit", () => {
+      if (generateBtn) {
+        generateBtn.disabled = true;
+        generateBtn.textContent = "生成中...";
       }
 
-      if (nextBtn) {
-        nextBtn.addEventListener("click", () => {
-          renderLightbox(currentIndex + 1);
-        });
+      if (paperPreviewPanel) {
+        paperPreviewPanel.hidden = true;
+      }
+      if (generatedResultPanel) {
+        generatedResultPanel.hidden = true;
       }
 
-      if (zoomOutBtn) {
-        zoomOutBtn.addEventListener("click", () => {
-          setZoom(zoomLevel - ZOOM_STEP);
-        });
-      }
+      startLoadingAnimation();
+    });
+  }
 
-      if (zoomInBtn) {
-        zoomInBtn.addEventListener("click", () => {
-          setZoom(zoomLevel + ZOOM_STEP);
-        });
-      }
+  document.addEventListener("click", (event) => {
+    const thumbBtn = event.target.closest(".thumb-btn");
+    if (!thumbBtn) {
+      return;
+    }
 
-      if (zoomResetBtn) {
-        zoomResetBtn.addEventListener("click", () => {
-          resetZoom();
-        });
-      }
+    const sourcePanel = thumbBtn.closest(".images-grid");
+    const buttons = getVisibleThumbButtons(sourcePanel || document);
+    const index = buttons.indexOf(thumbBtn);
+    if (index < 0) {
+      return;
+    }
 
-      if (saveAllBtn) {
-        saveAllBtn.addEventListener("click", () => {
-          collectImageItems();
-          imageItems.forEach((item, index) => {
-            setTimeout(() => {
-              downloadBySrc(item.src, `page_${index + 1}.jpg`);
-            }, index * 180);
-          });
-        });
-      }
+    openLightbox(buttons, index);
+  });
 
-      closeBtn.addEventListener("click", closeLightbox);
-      lightbox.addEventListener("click", (event) => {
-        if (event.target === lightbox) {
-          closeLightbox();
-        }
+  if (lightboxPrev) {
+    lightboxPrev.addEventListener("click", () => {
+      renderLightbox(currentIndex - 1);
+    });
+  }
+
+  if (lightboxNext) {
+    lightboxNext.addEventListener("click", () => {
+      renderLightbox(currentIndex + 1);
+    });
+  }
+
+  if (lightboxClose) {
+    lightboxClose.addEventListener("click", closeLightbox);
+  }
+
+  if (lightbox) {
+    lightbox.addEventListener("click", (event) => {
+      if (event.target === lightbox) {
+        closeLightbox();
+      }
+    });
+  }
+
+  if (zoomOutBtn) {
+    zoomOutBtn.addEventListener("click", () => {
+      setZoom(zoomLevel - ZOOM_STEP);
+    });
+  }
+
+  if (zoomInBtn) {
+    zoomInBtn.addEventListener("click", () => {
+      setZoom(zoomLevel + ZOOM_STEP);
+    });
+  }
+
+  if (zoomResetBtn) {
+    zoomResetBtn.addEventListener("click", resetZoom);
+  }
+
+  if (saveAllBtn) {
+    saveAllBtn.addEventListener("click", () => {
+      const resultButtons = generatedResultPanel
+        ? getVisibleThumbButtons(generatedResultPanel)
+        : getVisibleThumbButtons(document);
+
+      resultButtons.forEach((btn, index) => {
+        const src = btn.getAttribute("data-src") || "";
+        window.setTimeout(() => {
+          downloadBySrc(src, `page_${index + 1}.jpg`);
+        }, index * 180);
       });
-      document.addEventListener("keydown", (event) => {
-        if (!lightbox.classList.contains("show")) {
-          return;
-        }
-        if (event.key === "Escape") {
-          closeLightbox();
-          return;
-        }
-        if (event.key === "ArrowLeft") {
-          renderLightbox(currentIndex - 1);
-          return;
-        }
-        if (event.key === "ArrowRight") {
-          renderLightbox(currentIndex + 1);
-          return;
-        }
-        if (event.key === "+" || event.key === "=") {
-          event.preventDefault();
-          setZoom(zoomLevel + ZOOM_STEP);
-          return;
-        }
-        if (event.key === "-" || event.key === "_") {
-          event.preventDefault();
-          setZoom(zoomLevel - ZOOM_STEP);
-          return;
-        }
-        if (event.key === "0") {
-          event.preventDefault();
-          resetZoom();
-        }
-      });
+    });
+  }
 
-      collectImageItems();
-      updateNavVisibility();
-      updateZoomView();
-    })();
+  document.addEventListener("keydown", (event) => {
+    if (!lightbox || !lightbox.classList.contains("show")) {
+      return;
+    }
 
+    if (event.key === "Escape") {
+      closeLightbox();
+      return;
+    }
+
+    if (event.key === "ArrowLeft") {
+      renderLightbox(currentIndex - 1);
+      return;
+    }
+
+    if (event.key === "ArrowRight") {
+      renderLightbox(currentIndex + 1);
+      return;
+    }
+
+    if (event.key === "+" || event.key === "=") {
+      event.preventDefault();
+      setZoom(zoomLevel + ZOOM_STEP);
+      return;
+    }
+
+    if (event.key === "-" || event.key === "_") {
+      event.preventDefault();
+      setZoom(zoomLevel - ZOOM_STEP);
+      return;
+    }
+
+    if (event.key === "0") {
+      event.preventDefault();
+      resetZoom();
+    }
+  });
+
+  renderPaperPreview();
+  updateContentCount();
+  updateZoomView();
+})();
