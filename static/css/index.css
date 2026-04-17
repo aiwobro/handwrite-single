@@ -366,8 +366,68 @@ textarea {
 .result-toolbar {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+/* 工具栏按钮差异化颜色（权重需高于 .ghost-btn） */
+
+/* 🟢 新建生成 - 绿色调 */
+.result-toolbar .btn-secondary {
+  color: #1b6b5a;
+  border-color: rgba(27, 107, 90, 0.35);
+  background: rgba(232, 247, 242, 0.92);
+}
+.result-toolbar .btn-secondary:hover {
+  background: rgba(220, 244, 236, 1);
+  border-color: rgba(27, 107, 90, 0.55);
+}
+
+/* 🔴 下载 PDF - 红色调 */
+.result-toolbar .btn-primary {
+  color: #8b3a2f;
+  border-color: rgba(183, 56, 59, 0.35);
+  background: rgba(255, 237, 237, 0.92);
+}
+.result-toolbar .btn-primary:hover {
+  background: rgba(255, 228, 228, 1);
+  border-color: rgba(183, 56, 59, 0.55);
+}
+
+/* 🔵 一键保存全部 - 蓝色调 */
+.result-toolbar .btn-accent {
+  color: #1b4fa0;
+  border-color: rgba(27, 79, 160, 0.35);
+  background: rgba(232, 240, 255, 0.92);
+}
+.result-toolbar .btn-accent:hover {
+  background: rgba(220, 234, 255, 1);
+  border-color: rgba(27, 79, 160, 0.55);
+}
+
+/* 复选框样式 */
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.checkbox-field input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.checkbox-label {
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  user-select: none;
 }
 
 .ghost-btn,

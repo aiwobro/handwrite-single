@@ -37,4 +37,4 @@ content_file: "content.txt"
 # 输出配置
 output:
   prefix: "meeting_record"   # 输出文件名前缀
-  format: "jpg"              # 输出格式（jpg / png）
+  format: "jpg"              # 输出格式（jpg / png / pdf）

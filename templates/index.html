@@ -87,10 +87,22 @@
               </label>
 
               <label class="field">
+                <span>输出格式</span>
+                <select name="output_format" id="outputFormatSelect">
+                  <option value="jpg" {% if form_data.get('output_format', 'jpg') == 'jpg' %}selected{% endif %}>JPG（图片）</option>
+                  <option value="png" {% if form_data.get('output_format', 'jpg') == 'png' %}selected{% endif %}>PNG（图片）</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="dual-row">
+              <label class="field">
                 <span>随机种子（可选）</span>
                 <input name="seed" value="{{ form_data.get('seed', '') }}" placeholder="42" maxlength="32">
               </label>
             </div>
+
+
           </section>
 
           <section class="form-block">
@@ -149,8 +161,11 @@
         {% if images %}
         <div id="generatedResultPanel" class="panel-body">
           <div class="result-toolbar">
-            <a class="ghost-btn" href="{{ url_for('new_generation') }}">新建生成</a>
-            <button type="button" class="ghost-btn" id="saveAllBtn">一键保存全部</button>
+            <a class="ghost-btn toolbar-btn-new btn-secondary" href="{{ url_for('new_generation') }}">新建生成</a>
+            {% if pdf_url %}
+            <a class="ghost-btn toolbar-btn-pdf btn-primary" href="{{ pdf_url }}" download id="downloadPdfBtn">下载 PDF 文件</a>
+            {% endif %}
+            <button type="button" class="ghost-btn toolbar-btn-save btn-accent" id="saveAllBtn">一键保存全部</button>
           </div>
 
           <div class="images-grid" id="resultGrid">

@@ -534,7 +534,7 @@ class HandWriter:
         self._draw_line_tokens(line_tokens)
 
     def save_all(self, output_prefix="output", output_format="jpg"):
-        """保存所有生成的页面"""
+        """保存所有生成的页面为单独的图片文件"""
         if self.current_image:
             self.current_image = self.current_image.filter(ImageFilter.GaussianBlur(radius=0.5))
             self.pages.append(self.current_image)
@@ -549,6 +549,39 @@ class HandWriter:
             filename = f"{folder_path}/{output_prefix}_page_{i+1}.{output_format}"
             page.save(filename)
             print(f"已保存: {filename}")
+
+    def save_pdf(self, output_prefix="output", resolution=150):
+        """将所有页面合并为一个 PDF 文件，使用 Pillow 内置 PDF 导出
+
+        Args:
+            output_prefix: 输出文件名前缀，PDF 文件名为 {prefix}.pdf
+            resolution: PDF 分辨率（DPI），默认 150
+
+        Returns:
+            str: 生成的 PDF 文件路径
+        """
+        if self.current_image:
+            self.current_image = self.current_image.filter(ImageFilter.GaussianBlur(radius=0.5))
+            self.pages.append(self.current_image)
+            self.current_image = None
+
+        if not self.pages:
+            print("【警告】没有可导出的页面，跳过 PDF 生成。")
+            return None
+
+        folder_path = "./output"
+        if not os.path.exists(folder_path):
+            os.makedirs(folder_path)
+
+        filename = f"{folder_path}/{output_prefix}.pdf"
+        self.pages[0].save(
+            filename, "PDF",
+            save_all=True,
+            append_images=self.pages[1:],
+            resolution=resolution,
+        )
+        print(f"已保存 PDF: {filename}")
+        return filename
 
 
 def load_content(filename):
@@ -582,6 +615,7 @@ def parse_args():
   python handwrite.py --check-config     # 仅检查配置与资源，不生成图片
   python handwrite.py --debug-box        # 输出图片附带布局调试框
   python handwrite.py --seed 42          # 固定随机种子，结果可复现
+  python handwrite.py --format pdf        # 输出为 PDF 文件
         """
     )
     parser.add_argument(
@@ -614,6 +648,12 @@ def parse_args():
         type=int,
         default=None,
         help="固定随机种子（用于可复现结果）"
+    )
+    parser.add_argument(
+        "--format",
+        default=None,
+        choices=["jpg", "png", "pdf"],
+        help="输出格式 (覆盖配置文件中的 output.format)"
     )
     return parser.parse_args()
 
@@ -835,8 +875,8 @@ def validate_config(config, config_front, config_back, paper_type):
         fmt = output_cfg.get("format", "jpg")
         if not isinstance(fmt, str):
             errors.append("`output.format` 必须是字符串。")
-        elif fmt.lower() not in {"jpg", "jpeg", "png"}:
-            warnings.append(f"输出格式 `{fmt}` 未验证，建议使用 jpg/jpeg/png。")
+        elif fmt.lower() not in {"jpg", "jpeg", "png", "pdf"}:
+            warnings.append(f"输出格式 `{fmt}` 未验证，建议使用 jpg/jpeg/png/pdf。")
 
     if "paper_type" in config and not isinstance(config.get("paper_type"), str):
         errors.append("`paper_type` 必须是字符串。")
@@ -995,7 +1035,8 @@ if __name__ == "__main__":
     # 输出配置
     output_config = config.get("output", {})
     output_prefix = output_config.get("prefix", "meeting_record")
-    output_format = output_config.get("format", "jpg")
+    # 命令行 --format 参数优先级高于配置文件
+    output_format = args.format if args.format else output_config.get("format", "jpg")
 
     try:
         writer = HandWriter(
@@ -1012,7 +1053,12 @@ if __name__ == "__main__":
         if not args.meta_only and content:
             writer.write_text(content.strip())
 
-        writer.save_all(output_prefix, output_format)
+        if output_format.lower() == "pdf":
+            # PDF 模式：先保存单页图片，再合并为 PDF
+            writer.save_all(output_prefix, "jpg")
+            writer.save_pdf(output_prefix)
+        else:
+            writer.save_all(output_prefix, output_format)
 
     except Exception as e:
         print(f"运行出错: {e}")

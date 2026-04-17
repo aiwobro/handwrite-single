@@ -27,6 +27,7 @@ SECRET_KEY_FILE = BASE_DIR / ".flask_secret_key"
 SESSION_FORM_KEY = "last_form_data"
 SESSION_ERROR_KEY = "last_error"
 SESSION_RESULT_PREFIX_KEY = "last_result_prefix"
+SESSION_PDF_FILENAME_KEY = "last_pdf_filename"
 
 MAX_CONTENT_CHARS = 12000
 MAX_GENERATED_PAGES = 20
@@ -42,6 +43,7 @@ SESSION_FIELD_LIMITS = {
     "paper_type": 64,
     "seed": 32,
     "content": 900,
+    "output_format": 4,
 }
 SESSION_PAYLOAD_MAX_BYTES = 2800
 
@@ -180,7 +182,7 @@ def _build_paper_preview_items(presets):
     return preview_items
 
 
-def _render_index(images=None, form_data=None, error=None):
+def _render_index(images=None, form_data=None, error=None, pdf_url=None):
     form_data = dict(form_data or {})
     paper_types = [DEFAULT_PAPER_TYPE]
     default_paper_type = DEFAULT_PAPER_TYPE
@@ -212,6 +214,7 @@ def _render_index(images=None, form_data=None, error=None):
         default_paper_type=default_paper_type,
         paper_preview_map=paper_preview_map,
         default_paper_previews=default_paper_previews,
+        pdf_url=pdf_url,
     )
 
 
@@ -220,20 +223,26 @@ def _image_urls_by_prefix(output_prefix, output_format="jpg"):
         return []
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    # 尝试指定格式，如果没有文件则回退到另一种格式
     generated = sorted(OUTPUT_DIR.glob(f"{output_prefix}_page_*.{output_format}"))
+    if not generated:
+        alt = "png" if output_format.lower() == "jpg" else "jpg"
+        generated = sorted(OUTPUT_DIR.glob(f"{output_prefix}_page_*.{alt}"))
     return [url_for("serve_output", filename=p.name) for p in generated]
 
 
-def _save_page_state(form_data=None, error=None, result_prefix=None):
+def _save_page_state(form_data=None, error=None, result_prefix=None, pdf_filename=None):
     session[SESSION_FORM_KEY] = _sanitize_form_data_for_session(form_data)
     session[SESSION_ERROR_KEY] = error
     session[SESSION_RESULT_PREFIX_KEY] = result_prefix
+    session[SESSION_PDF_FILENAME_KEY] = pdf_filename
 
 
 def _clear_page_state():
     session.pop(SESSION_FORM_KEY, None)
     session.pop(SESSION_ERROR_KEY, None)
     session.pop(SESSION_RESULT_PREFIX_KEY, None)
+    session.pop(SESSION_PDF_FILENAME_KEY, None)
 
 
 def _sanitize_form_data_for_session(form_data):
@@ -258,7 +267,7 @@ def _sanitize_form_data_for_session(form_data):
     return sanitized
 
 
-def generate_images(meta, content, paper_type=None, seed=None):
+def generate_images(meta, content, paper_type=None, seed=None, output_format="jpg"):
     fonts = [str(DEFAULT_FONT)]
     if not DEFAULT_FONT.exists():
         raise RuntimeError(f"字体文件不存在: {DEFAULT_FONT}")
@@ -272,7 +281,9 @@ def generate_images(meta, content, paper_type=None, seed=None):
     )
 
     output_prefix = f"web_{uuid.uuid4().hex[:10]}"
-    output_format = "jpg"
+
+    # 图片格式：jpg 或 png
+    image_format = "png" if output_format.lower() == "png" else "jpg"
 
     writer = HandWriter(
         fonts,
@@ -285,11 +296,20 @@ def generate_images(meta, content, paper_type=None, seed=None):
     writer.write_meta(meta)
     if content:
         writer.write_text(content.strip())
-    writer.save_all(output_prefix, output_format)
+    writer.save_all(output_prefix, image_format)
+
+    # PDF 生成：始终生成，供用户下载
+    pdf_filename = None
+    try:
+        pdf_path = writer.save_pdf(output_prefix)
+        if pdf_path:
+            pdf_filename = os.path.basename(pdf_path)
+    except Exception:
+        app.logger.warning("PDF 生成失败，不影响图片展示", exc_info=True)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    generated = sorted(OUTPUT_DIR.glob(f"{output_prefix}_page_*.{output_format}"))
-    return [p.name for p in generated], used_paper_type, output_prefix
+    generated = sorted(OUTPUT_DIR.glob(f"{output_prefix}_page_*.{image_format}"))
+    return [p.name for p in generated], used_paper_type, output_prefix, pdf_filename
 
 
 @app.route("/", methods=["GET"])
@@ -297,9 +317,12 @@ def index():
     form_data = session.get(SESSION_FORM_KEY, {})
     error = session.get(SESSION_ERROR_KEY)
     result_prefix = session.get(SESSION_RESULT_PREFIX_KEY)
-    images = _image_urls_by_prefix(result_prefix)
+    pdf_filename = session.get(SESSION_PDF_FILENAME_KEY)
+    saved_format = form_data.get("output_format", "jpg")
+    images = _image_urls_by_prefix(result_prefix, output_format=saved_format)
+    pdf_url = url_for("serve_output", filename=pdf_filename) if pdf_filename else None
 
-    return _render_index(images=images or None, form_data=form_data, error=error)
+    return _render_index(images=images or None, form_data=form_data, error=error, pdf_url=pdf_url)
 
 
 @app.route("/new", methods=["GET"])
@@ -314,8 +337,10 @@ def generate():
     content = request.form.get("content", "").strip()
     seed_value = request.form.get("seed", "").strip()
     paper_type = request.form.get("paper_type", "").strip() or None
+    output_format = request.form.get("output_format", "jpg").strip()
     if paper_type:
         form_data["paper_type"] = paper_type
+    form_data["output_format"] = output_format
 
     if not content:
         _save_page_state(form_data=form_data, error="会议正文不能为空。", result_prefix=None)
@@ -335,11 +360,12 @@ def generate():
         return redirect(url_for("index"))
 
     try:
-        _, used_paper_type, output_prefix = generate_images(
+        _, used_paper_type, output_prefix, pdf_filename = generate_images(
             _build_meta_from_form(request.form),
             content,
             paper_type=paper_type,
             seed=seed,
+            output_format=output_format,
         )
         form_data["paper_type"] = used_paper_type
     except ValueError as exc:
@@ -350,7 +376,7 @@ def generate():
         _save_page_state(form_data=form_data, error="生成失败：服务端异常，请稍后重试。", result_prefix=None)
         return redirect(url_for("index"))
 
-    _save_page_state(form_data=form_data, error=None, result_prefix=output_prefix)
+    _save_page_state(form_data=form_data, error=None, result_prefix=output_prefix, pdf_filename=pdf_filename)
     return redirect(url_for("index"))
 
 
