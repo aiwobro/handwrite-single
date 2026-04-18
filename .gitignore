@@ -14,3 +14,9 @@ __pycache__/
 
 # WorkBuddy
 .workbuddy/
+
+# 工具文件
+.codex
+handwrite_uwsgi.ini
+sync_static.sh
+wsgi.py
