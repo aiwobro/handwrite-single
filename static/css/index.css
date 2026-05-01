@@ -86,6 +86,7 @@ h1 {
   font-size: 14px;
   justify-self: end;
   text-align: right;
+  white-space: normal;
   max-width: 320px;
 }
 

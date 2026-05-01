@@ -336,7 +336,6 @@
           credentials: "same-origin",
           redirect: "follow",
         });
-        const html = await response.text();
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
@@ -351,9 +350,10 @@
           loadingPercent.textContent = "100%";
         }
 
-        document.open();
-        document.write(html);
-        document.close();
+        // Reload page to show new results, keeping loading animation visible briefly
+        setTimeout(() => {
+          window.location.reload();
+        }, 400);
       } catch (error) {
         console.error("提交生成请求失败:", error);
         isSubmitting = false;
@@ -437,11 +437,10 @@
         ? getVisibleThumbButtons(generatedResultPanel)
         : getVisibleThumbButtons(document);
 
+      // Download all immediately without artificial delay
       resultButtons.forEach((btn, index) => {
         const src = btn.getAttribute("data-src") || "";
-        window.setTimeout(() => {
-          downloadBySrc(src, `page_${index + 1}.jpg`);
-        }, index * 180);
+        downloadBySrc(src, `page_${index + 1}.jpg`);
       });
     });
   }
