@@ -35,7 +35,7 @@
     ? pageData.defaultPaperPreviews
     : [];
 
-  const ZOOM_MIN = 0.6;
+  const ZOOM_MIN = 0.3;
   const ZOOM_MAX = 3;
   const ZOOM_STEP = 0.2;
 
