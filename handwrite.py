@@ -98,6 +98,9 @@ class HandWriter:
         # 横线类符号：字高极小，按原公式会掉到行底，需要少提一些
         self.horizontal_chars = {'—', '－', '-', '一'}
 
+        # 字间距压缩系数（硬编码常量统一管理）
+        self.KERNING_FACTOR = 0.76
+
         # GB/T 15834-2011 行末行首禁则（常用集合）
         # 行首禁则：点号和右半标号通常不出现在一行之首
         self.no_line_start = {
@@ -146,7 +149,6 @@ class HandWriter:
     def _load_new_page(self):
         """加载新页面的逻辑"""
         if self.current_image is not None:
-            self.current_image = self.current_image.filter(ImageFilter.GaussianBlur(radius=0.5))
             self.pages.append(self.current_image)
 
         current_page_index = len(self.pages)
@@ -164,8 +166,8 @@ class HandWriter:
 
         try:
             self.current_image = Image.open(config["bg_file"]).convert("RGB")
-        except FileNotFoundError:
-            print(f"警告：找不到 {config['bg_file']}，使用空白背景。")
+        except (FileNotFoundError, OSError):
+            print(f"警告：背景图 {config['bg_file']} 无法加载（文件不存在或已损坏），使用空白背景。")
             self.current_image = Image.new("RGB", (1240, 1754), (255, 255, 255))
 
         self.width, self.height = self.current_image.size
@@ -192,8 +194,7 @@ class HandWriter:
             return ImageFont.truetype(font_path, random_size)
         except OSError as e:
             raise RuntimeError(
-                f"字体加载失败：{font_path}（size={random_size}）。"
-                "请检查字体文件是否存在、路径是否正确、文件是否损坏。"
+                f"字体加载失败（size={random_size}）。请检查字体文件是否存在、路径是否正确、文件是否损坏。"
             ) from e
 
     def draw_char_image(self, char, font):
@@ -277,7 +278,7 @@ class HandWriter:
         for ch in token:
             font = self.get_random_font()
             char_img, char_w = self.draw_char_image(ch, font)
-            kerning_factor = 0.76
+            kerning_factor = self.KERNING_FACTOR
             random_jitter = self.rng.randint(-3, 3)
             advance = max(1, int(char_w * kerning_factor) + random_jitter)
             glyphs.append({"char": ch, "img": char_img, "advance": advance})
@@ -357,7 +358,7 @@ class HandWriter:
                     font = self.get_random_font()
                     char_img, char_w = self.draw_char_image(char, font)
 
-                    kerning_factor = 0.76
+                    kerning_factor = self.KERNING_FACTOR
                     actual_width = int(char_w * kerning_factor) + self.rng.randint(-1, 2)
 
                     if local_x + actual_width > box_right:
@@ -536,18 +537,17 @@ class HandWriter:
     def save_all(self, output_prefix="output", output_format="jpg"):
         """保存所有生成的页面为单独的图片文件"""
         if self.current_image:
-            self.current_image = self.current_image.filter(ImageFilter.GaussianBlur(radius=0.5))
             self.pages.append(self.current_image)
             self.current_image = None
 
-        folder_path = "./output"
-
+        folder_path = os.path.join(".", "output")
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
 
         for i, page in enumerate(self.pages):
-            filename = f"{folder_path}/{output_prefix}_page_{i+1}.{output_format}"
-            page.save(filename)
+            blurred_page = page.filter(ImageFilter.GaussianBlur(radius=0.5))
+            filename = os.path.join(folder_path, f"{output_prefix}_page_{i+1}.{output_format}")
+            blurred_page.save(filename)
             print(f"已保存: {filename}")
 
     def save_pdf(self, output_prefix="output", resolution=150):
@@ -561,7 +561,6 @@ class HandWriter:
             str: 生成的 PDF 文件路径
         """
         if self.current_image:
-            self.current_image = self.current_image.filter(ImageFilter.GaussianBlur(radius=0.5))
             self.pages.append(self.current_image)
             self.current_image = None
 
@@ -569,15 +568,17 @@ class HandWriter:
             print("【警告】没有可导出的页面，跳过 PDF 生成。")
             return None
 
-        folder_path = "./output"
+        folder_path = os.path.join(".", "output")
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
 
-        filename = f"{folder_path}/{output_prefix}.pdf"
-        self.pages[0].save(
+        # 统一对所有页面应用模糊效果后再生成 PDF
+        blurred_pages = [page.filter(ImageFilter.GaussianBlur(radius=0.5)) for page in self.pages]
+        filename = os.path.join(folder_path, f"{output_prefix}.pdf")
+        blurred_pages[0].save(
             filename, "PDF",
             save_all=True,
-            append_images=self.pages[1:],
+            append_images=blurred_pages[1:],
             resolution=resolution,
         )
         print(f"已保存 PDF: {filename}")
