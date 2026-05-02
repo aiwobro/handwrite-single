@@ -278,6 +278,9 @@
     const fitScale = Math.min(scaleX, scaleY, 1); // Never scale up beyond 100%
 
     zoomLevel = Math.round(fitScale * 100) / 100;
+    if (fitScale <= 0 || !isFinite(zoomLevel)) {
+      zoomLevel = ZOOM_MIN;
+    }
     zoomLevel = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoomLevel));
     updateZoomView();
   }
