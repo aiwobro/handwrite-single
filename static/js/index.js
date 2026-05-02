@@ -248,7 +248,38 @@
     lightboxDownload.href = item.src;
     lightboxDownload.download = getFileName(item.src, fallbackName);
 
-    resetZoom();
+    // Default zoom level before image loads
+    zoomLevel = 1;
+    updateZoomView();
+
+    // After image loads, adjust zoom to fit within viewport
+    if (lightboxImg.complete) {
+      fitImageToViewport();
+    } else {
+      lightboxImg.onload = fitImageToViewport;
+    }
+  }
+
+  function fitImageToViewport() {
+    if (!lightboxImg || !lightboxStage) {
+      return;
+    }
+    const stageRect = lightboxStage.getBoundingClientRect();
+    const imgWidth = lightboxImg.naturalWidth;
+    const imgHeight = lightboxImg.naturalHeight;
+
+    if (!imgWidth || !imgHeight) {
+      return;
+    }
+
+    // Calculate scale to fit image within stage, with padding
+    const scaleX = (stageRect.width - 40) / imgWidth;
+    const scaleY = (stageRect.height - 40) / imgHeight;
+    const fitScale = Math.min(scaleX, scaleY, 1); // Never scale up beyond 100%
+
+    zoomLevel = Math.round(fitScale * 100) / 100;
+    zoomLevel = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoomLevel));
+    updateZoomView();
   }
 
   function openLightbox(buttons, index) {
