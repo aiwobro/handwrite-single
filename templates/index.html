@@ -3,176 +3,326 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Handwrite Studio</title>
-  <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
-  <link rel="shortcut icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}">
+  <meta name="theme-color" content="#f3eee4">
+  <title>会议记录手写生成台</title>
+  <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico', v=static_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css', v=static_version) }}">
 </head>
 <body>
-  <div class="bg-layer" aria-hidden="true"></div>
+  <div class="page-texture" aria-hidden="true"></div>
 
   <div class="app-shell">
     <header class="app-header reveal">
-      <div>
-        <p class="brand-kicker">Handwrite Studio</p>
-        <h1>会议记录手写生成台</h1>
+      <div class="brand-lockup">
+        <span class="brand-mark" aria-hidden="true">写</span>
+        <div>
+          <p class="brand-kicker">Handwrite Studio</p>
+          <h1>会议记录手写生成台</h1>
+        </div>
       </div>
-      <p class="header-note">上传内容后即可自动分页渲染，支持纸张预览与批量下载。</p>
+      <div class="header-copy">
+        <p>粘贴或导入会议正文，自动完成分页、手写渲染与文件导出。</p>
+        <ul class="feature-list" aria-label="功能特性">
+          <li>自动分页</li>
+          <li>纸张预览</li>
+          <li>PDF 与图片导出</li>
+        </ul>
+      </div>
     </header>
 
     <main class="workspace">
-      <section class="composer reveal" style="--delay: 0.05s">
-        <form method="post" action="/generate" id="generateForm" class="form-grid" novalidate>
-          <section class="form-block">
+      <section class="composer reveal" style="--delay: 0.05s" aria-labelledby="composerTitle">
+        <div class="card-heading">
+          <div>
+            <p class="eyebrow">填写内容</p>
+            <h2 id="composerTitle">创建会议记录</h2>
+          </div>
+          <span class="required-note"><i aria-hidden="true"></i> 正文为必填项</span>
+        </div>
+
+        <div
+          id="formStatus"
+          class="form-status{% if error %} is-error{% endif %}"
+          role="alert"
+          tabindex="-1"
+          {% if not error %}hidden{% endif %}
+        >
+          <span class="status-icon" aria-hidden="true">!</span>
+          <p id="formStatusText">{{ error or '' }}</p>
+        </div>
+
+        <form method="post" action="{{ url_for('generate') }}" id="generateForm" class="form-grid" novalidate>
+          <section class="form-block" aria-labelledby="meetingInfoTitle">
             <div class="block-head">
-              <h2>会议信息</h2>
+              <div class="block-title">
+                <span class="step-number">01</span>
+                <div>
+                  <h3 id="meetingInfoTitle">会议信息</h3>
+                  <p>用于填写纸张首页的基本信息，可按需留空。</p>
+                </div>
+              </div>
             </div>
 
             <div class="date-row">
               <label class="field">
                 <span>年份</span>
-                <input name="year" value="{{ form_data.get('year', '') }}" placeholder="2026" maxlength="16">
+                <div class="input-suffix">
+                  <input name="year" value="{{ form_data.get('year', '') }}" placeholder="2026" maxlength="16" inputmode="numeric" autocomplete="off">
+                  <em>年</em>
+                </div>
               </label>
               <label class="field">
                 <span>月份</span>
-                <input name="month" value="{{ form_data.get('month', '') }}" placeholder="4" maxlength="16">
+                <div class="input-suffix">
+                  <input name="month" value="{{ form_data.get('month', '') }}" placeholder="9" maxlength="16" inputmode="numeric" autocomplete="off">
+                  <em>月</em>
+                </div>
               </label>
               <label class="field">
                 <span>日期</span>
-                <input name="day" value="{{ form_data.get('day', '') }}" placeholder="13" maxlength="16">
+                <div class="input-suffix">
+                  <input name="day" value="{{ form_data.get('day', '') }}" placeholder="6" maxlength="16" inputmode="numeric" autocomplete="off">
+                  <em>日</em>
+                </div>
               </label>
             </div>
 
             <label class="field">
               <span>会议地点</span>
-              <input name="venue" value="{{ form_data.get('venue', '') }}" placeholder="A栋 3F 第一会议室" maxlength="128">
+              <input name="venue" value="{{ form_data.get('venue', '') }}" placeholder="例如：A 栋三层第一会议室" maxlength="128" autocomplete="organization">
             </label>
 
             <label class="field">
               <span>会议标题</span>
-              <input name="meeting_title" value="{{ form_data.get('meeting_title', '') }}" placeholder="关于产品版本里程碑评审会议" maxlength="256">
+              <input name="meeting_title" value="{{ form_data.get('meeting_title', '') }}" placeholder="例如：第三季度项目进度总结会议" maxlength="256" autocomplete="off">
             </label>
 
             <div class="dual-row">
               <label class="field">
                 <span>主持人</span>
-                <input name="chairperson" value="{{ form_data.get('chairperson', '') }}" placeholder="张三" maxlength="64">
+                <input name="chairperson" value="{{ form_data.get('chairperson', '') }}" placeholder="姓名" maxlength="64" autocomplete="off">
               </label>
 
               <label class="field">
                 <span>记录人</span>
-                <input name="recorder" value="{{ form_data.get('recorder', '') }}" placeholder="李四" maxlength="64">
+                <input name="recorder" value="{{ form_data.get('recorder', '') }}" placeholder="姓名" maxlength="64" autocomplete="off">
               </label>
             </div>
 
             <label class="field">
               <span>参会人</span>
-              <input name="attendees" value="{{ form_data.get('attendees', '') }}" placeholder="王五，赵六，周七" maxlength="256">
+              <input name="attendees" value="{{ form_data.get('attendees', '') }}" placeholder="多人请使用逗号分隔" maxlength="256" autocomplete="off">
             </label>
           </section>
 
-          <section class="form-block">
+          <section class="form-block" aria-labelledby="layoutTitle">
             <div class="block-head">
-              <h2>排版参数</h2>
+              <div class="block-title">
+                <span class="step-number">02</span>
+                <div>
+                  <h3 id="layoutTitle">选择纸张</h3>
+                  <p>切换纸张后，右侧会立即显示对应预览。</p>
+                </div>
+              </div>
             </div>
 
-            <div class="dual-row">
-              <label class="field">
-                <span>纸张类型</span>
-                <select name="paper_type" id="paperTypeSelect">
-                  {% for paper_type_name in paper_types %}
-                  <option value="{{ paper_type_name }}" {% if form_data.get('paper_type', default_paper_type) == paper_type_name %}selected{% endif %}>{{ paper_type_name }}</option>
-                  {% endfor %}
-                </select>
-              </label>
+            <label class="field">
+              <span>纸张样式</span>
+              <select name="paper_type" id="paperTypeSelect">
+                {% for option in paper_options %}
+                <option
+                  value="{{ option.value }}"
+                  data-display-name="{{ option.label }}"
+                  {% if form_data.get('paper_type', default_paper_type) == option.value %}selected{% endif %}
+                >{{ option.label }}</option>
+                {% endfor %}
+              </select>
+            </label>
 
-              <label class="field">
-                <span>输出格式</span>
-                <select name="output_format" id="outputFormatSelect">
-                  <option value="jpg" {% if form_data.get('output_format', 'jpg') == 'jpg' %}selected{% endif %}>JPG（图片）</option>
-                  <option value="png" {% if form_data.get('output_format', 'jpg') == 'png' %}selected{% endif %}>PNG（图片）</option>
-                </select>
-              </label>
-            </div>
+            <details class="advanced-panel" {% if form_data.get('seed') or form_data.get('output_format', 'jpg') == 'png' %}open{% endif %}>
+              <summary>
+                <span>高级设置</span>
+                <small>图片格式与随机种子</small>
+              </summary>
+              <div class="advanced-content">
+                <label class="field">
+                  <span>单页图片格式</span>
+                  <select name="output_format" id="outputFormatSelect">
+                    <option value="jpg" {% if form_data.get('output_format', 'jpg') == 'jpg' %}selected{% endif %}>JPG · 体积更小</option>
+                    <option value="png" {% if form_data.get('output_format', 'jpg') == 'png' %}selected{% endif %}>PNG · 画质优先</option>
+                  </select>
+                  <small class="field-help">无论选择哪种格式，生成后都会同时提供 PDF。</small>
+                </label>
 
-            <div class="dual-row">
-              <label class="field">
-                <span>随机种子（可选）</span>
-                <input name="seed" value="{{ form_data.get('seed', '') }}" placeholder="42" maxlength="32">
-              </label>
-            </div>
-
-
+                <label class="field">
+                  <span>随机种子 <small>选填</small></span>
+                  <input
+                    name="seed"
+                    id="seedInput"
+                    value="{{ form_data.get('seed', '') }}"
+                    placeholder="例如：42"
+                    maxlength="32"
+                    inputmode="numeric"
+                    aria-describedby="seedHelp seedError"
+                    autocomplete="off"
+                  >
+                  <small class="field-help" id="seedHelp">使用相同数字，可复现相同的笔迹随机效果。</small>
+                  <small class="field-error" id="seedError" hidden></small>
+                </label>
+              </div>
+            </details>
           </section>
 
-          <section class="form-block">
-            <div class="block-head">
-              <h2>正文内容</h2>
-              <p id="contentCount" class="content-count">0 字</p>
+          <section class="form-block content-block" aria-labelledby="contentTitle">
+            <div class="block-head content-head">
+              <div class="block-title">
+                <span class="step-number">03</span>
+                <div>
+                  <h3 id="contentTitle">正文内容</h3>
+                  <p>支持直接粘贴，也可以从本地导入 TXT 文件。</p>
+                </div>
+              </div>
+              <div class="content-tools">
+                <label class="mini-btn file-trigger" for="contentFileInput">
+                  <input type="file" id="contentFileInput" accept=".txt,text/plain">
+                  导入 TXT
+                </label>
+                <button type="button" class="mini-btn" id="clearContentBtn">清空</button>
+              </div>
             </div>
+
             <label class="field">
               <span class="sr-only">会议正文</span>
               <textarea
                 name="content"
                 id="contentInput"
-                placeholder="请输入会议正文内容..."
+                placeholder="请输入会议正文内容……"
+                maxlength="{{ max_content_chars }}"
+                required
+                aria-describedby="contentHelp contentCount contentError"
               >{{ form_data.get('content', '') }}</textarea>
+              <div class="textarea-meta">
+                <small class="field-help" id="contentHelp">换行和中文标点会在排版时自动处理。</small>
+                <span id="contentCount" class="content-count">0 / {{ max_content_chars }}</span>
+              </div>
+              <small class="field-error" id="contentError" hidden></small>
             </label>
           </section>
 
           <div class="form-actions">
-            <button type="submit" id="generateBtn" class="primary-btn">生成手写图片</button>
+            <button type="submit" id="generateBtn" class="primary-btn">
+              <span class="button-symbol" aria-hidden="true">✦</span>
+              <span id="generateBtnText">开始生成</span>
+            </button>
+            <p>通常需要数秒，页数和正文长度会影响生成时间。</p>
           </div>
         </form>
-
-        {% if error %}
-        <div class="error-box" role="alert">{{ error }}</div>
-        {% endif %}
       </section>
 
-      <section class="viewer reveal" style="--delay: 0.1s" id="rightPanel">
+      <section class="viewer reveal" style="--delay: 0.1s" id="rightPanel" aria-labelledby="viewerTitle">
         <div class="viewer-head">
-          <h2>预览与导出</h2>
-          <p>点击缩略图可查看大图，支持单张保存与一键下载。</p>
+          <div>
+            <p class="eyebrow">实时预览</p>
+            <h2 id="viewerTitle">预览与导出</h2>
+          </div>
+          <span class="paper-chip" id="selectedPaperName">
+            {{ paper_display_names.get(form_data.get('paper_type', default_paper_type), form_data.get('paper_type', default_paper_type)) }}
+          </span>
         </div>
 
         {% if not images %}
-        <div id="paperPreviewPanel" class="panel-body">
+        <div id="paperPreviewPanel" class="panel-body preview-panel">
           <div class="panel-headline">
-            <h3>纸张预览</h3>
-            <span>根据当前纸张类型自动切换</span>
+            <div>
+              <h3>纸张预览</h3>
+              <p>点击纸张可放大查看细节</p>
+            </div>
+            <span id="paperSideCount"></span>
           </div>
-          <div class="images-grid" id="paperPreviewGrid"></div>
-          <p class="empty-note" id="paperPreviewEmpty" hidden>当前纸张暂无可用预览图。</p>
+          <div class="images-grid preview-grid" id="paperPreviewGrid"></div>
+          <div class="empty-state" id="paperPreviewEmpty" hidden>
+            <span aria-hidden="true">□</span>
+            <h3>暂无纸张预览</h3>
+            <p>当前纸张资源不可用，请联系管理员检查配置。</p>
+          </div>
+          <div class="workflow-hint">
+            <div><strong>1</strong><span>填写内容</span></div>
+            <i aria-hidden="true"></i>
+            <div><strong>2</strong><span>自动排版</span></div>
+            <i aria-hidden="true"></i>
+            <div><strong>3</strong><span>下载文件</span></div>
+          </div>
         </div>
         {% endif %}
 
         <div class="loading-panel" id="generationPreview" aria-live="polite" aria-hidden="true">
           <div class="loading-content">
-            <p class="loading-title">正在生成手写图片</p>
-            <p class="loading-subtitle">系统正在进行分页排版与笔迹渲染，请稍候。</p>
-            <div class="loading-track">
-              <div class="loading-fill" id="loadingFill"></div>
+            <div class="writing-indicator" aria-hidden="true">
+              <span class="paper-sheet"></span>
+              <span class="writing-pen">✎</span>
             </div>
-            <div class="loading-percent" id="loadingPercent">0%</div>
+            <p class="loading-kicker">正在生成</p>
+            <h3 class="loading-title" id="loadingStage">正在准备排版</h3>
+            <p class="loading-subtitle" id="loadingDetail">正在检查文字和纸张参数，请稍候。</p>
+            <div class="loading-track" aria-hidden="true"><span></span></div>
+            <div class="loading-footer">
+              <span>请保持页面打开</span>
+              <span id="loadingElapsed">已用时 0 秒</span>
+            </div>
           </div>
         </div>
 
         {% if images %}
-        <div id="generatedResultPanel" class="panel-body">
-          <div class="result-toolbar">
-            <a class="ghost-btn toolbar-btn-new btn-secondary" href="{{ url_for('new_generation') }}">新建生成</a>
-            {% if pdf_url %}
-            <a class="ghost-btn toolbar-btn-pdf btn-primary" href="{{ pdf_url }}" download id="downloadPdfBtn">下载 PDF 文件</a>
-            {% endif %}
-            <button type="button" class="ghost-btn toolbar-btn-save btn-accent" id="saveAllBtn">一键保存全部</button>
+        <div id="generatedResultPanel" class="panel-body result-panel">
+          <div class="success-banner" role="status">
+            <span class="success-icon" aria-hidden="true">✓</span>
+            <div>
+              <h3>生成完成</h3>
+              <p>共 {{ images|length }} 页，文件已准备好。</p>
+            </div>
           </div>
 
-          <div class="images-grid" id="resultGrid">
+          <div class="result-toolbar" aria-label="导出操作">
+            {% if pdf_url %}
+            <a class="action-btn action-primary" href="{{ pdf_url }}" download id="downloadPdfBtn">
+              <span aria-hidden="true">↓</span> 下载 PDF
+            </a>
+            {% endif %}
+            {% if zip_url %}
+            <a class="action-btn action-secondary" href="{{ zip_url }}" download id="downloadZipBtn">
+              下载全部图片（ZIP）
+            </a>
+            {% endif %}
+            <a class="action-btn action-quiet" href="#generateForm">修改后重新生成</a>
+            <a class="action-btn action-quiet danger-link" href="{{ url_for('new_generation') }}" id="resetFormLink">清空重填</a>
+          </div>
+
+          <div class="panel-headline result-headline">
+            <div>
+              <h3>生成结果</h3>
+              <p>点击任意页面可放大查看</p>
+            </div>
+            <span>{{ images|length }} 页</span>
+          </div>
+
+          <div class="images-grid result-grid" id="resultGrid">
             {% for image in images %}
-            <article class="image-item">
-              <button type="button" class="thumb-btn" data-src="{{ image }}" aria-label="查看第{{ loop.index }}张大图">
-                <img class="thumb-img" src="{{ image }}" alt="生成结果第 {{ loop.index }} 页" loading="lazy">
+            <article class="image-item result-item">
+              <button
+                type="button"
+                class="thumb-btn"
+                data-src="{{ image }}"
+                data-label="第 {{ loop.index }} 页"
+                aria-label="查看第 {{ loop.index }} 页大图"
+              >
+                <img
+                  class="thumb-img"
+                  src="{{ image }}"
+                  alt="生成结果第 {{ loop.index }} 页"
+                  loading="{% if loop.first %}eager{% else %}lazy{% endif %}"
+                  decoding="async"
+                >
+                <span class="zoom-hint" aria-hidden="true">放大</span>
               </button>
               <div class="thumb-meta">
                 <p>第 {{ loop.index }} 页</p>
@@ -187,23 +337,33 @@
     </main>
   </div>
 
-  <div class="lightbox" id="lightbox">
-    <div class="lightbox-inner" role="dialog" aria-modal="true" aria-label="大图预览">
-      <button type="button" class="lightbox-close" id="lightboxClose" aria-label="关闭预览">×</button>
-      <button type="button" class="lightbox-nav prev" id="lightboxPrev" aria-label="上一张">‹</button>
-      <button type="button" class="lightbox-nav next" id="lightboxNext" aria-label="下一张">›</button>
-      <a class="lightbox-download" id="lightboxDownload" href="#" download>保存此图</a>
+  <div class="lightbox" id="lightbox" aria-hidden="true" hidden>
+    <div class="lightbox-inner" id="lightboxDialog" role="dialog" aria-modal="true" aria-labelledby="lightboxTitle" tabindex="-1">
+      <header class="lightbox-header">
+        <div>
+          <h2 id="lightboxTitle">大图预览</h2>
+          <p id="lightboxCounter">第 1 / 1 页</p>
+        </div>
+        <div class="lightbox-header-actions">
+          <a class="lightbox-download" id="lightboxDownload" href="#" download>保存此图</a>
+          <button type="button" class="icon-btn lightbox-close" id="lightboxClose" aria-label="关闭预览">×</button>
+        </div>
+      </header>
 
-      <div class="lightbox-tools">
-        <button type="button" class="ghost-btn" id="zoomOutBtn" aria-label="缩小图片">缩小</button>
+      <div class="lightbox-toolbar" aria-label="图片缩放工具">
+        <button type="button" class="tool-btn" id="zoomOutBtn" aria-label="缩小图片">−</button>
         <span class="lightbox-zoom-level" id="zoomLevelText">100%</span>
-        <button type="button" class="ghost-btn" id="zoomInBtn" aria-label="放大图片">放大</button>
-        <button type="button" class="ghost-btn" id="zoomResetBtn" aria-label="重置缩放">重置</button>
+        <button type="button" class="tool-btn" id="zoomInBtn" aria-label="放大图片">＋</button>
+        <button type="button" class="tool-btn reset-tool" id="zoomResetBtn">适合窗口</button>
+        <span class="toolbar-tip">Ctrl + 滚轮缩放</span>
       </div>
 
       <div class="lightbox-stage" id="lightboxStage">
-        <img class="lightbox-img" id="lightboxImg" src="" alt="大图预览">
+        <img class="lightbox-img" id="lightboxImg" src="" alt="大图预览" draggable="false">
       </div>
+
+      <button type="button" class="lightbox-nav prev" id="lightboxPrev" aria-label="上一张">‹</button>
+      <button type="button" class="lightbox-nav next" id="lightboxNext" aria-label="下一张">›</button>
     </div>
   </div>
 
@@ -211,8 +371,11 @@
     window.__INDEX_PAGE_DATA = {
       paperPreviewMap: {{ paper_preview_map | tojson }},
       defaultPaperPreviews: {{ default_paper_previews | tojson }},
+      paperDisplayNames: {{ paper_display_names | tojson }},
+      maxContentChars: {{ max_content_chars | tojson }},
+      clearDraft: {{ clear_draft | tojson }},
     };
   </script>
-  <script src="{{ url_for('static', filename='js/index.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/index.js', v=static_version) }}"></script>
 </body>
 </html>

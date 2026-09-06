@@ -1,31 +1,49 @@
 (function () {
+  "use strict";
+
   const generateForm = document.getElementById("generateForm");
   const generateBtn = document.getElementById("generateBtn");
+  const generateBtnText = document.getElementById("generateBtnText");
+  const formStatus = document.getElementById("formStatus");
+  const formStatusText = document.getElementById("formStatusText");
+
   const generationPreview = document.getElementById("generationPreview");
-  const loadingFill = document.getElementById("loadingFill");
-  const loadingPercent = document.getElementById("loadingPercent");
+  const loadingStage = document.getElementById("loadingStage");
+  const loadingDetail = document.getElementById("loadingDetail");
+  const loadingElapsed = document.getElementById("loadingElapsed");
 
   const paperTypeSelect = document.getElementById("paperTypeSelect");
+  const selectedPaperName = document.getElementById("selectedPaperName");
   const paperPreviewPanel = document.getElementById("paperPreviewPanel");
   const paperPreviewGrid = document.getElementById("paperPreviewGrid");
   const paperPreviewEmpty = document.getElementById("paperPreviewEmpty");
+  const paperSideCount = document.getElementById("paperSideCount");
   const generatedResultPanel = document.getElementById("generatedResultPanel");
+  const rightPanel = document.getElementById("rightPanel");
 
   const contentInput = document.getElementById("contentInput");
   const contentCount = document.getElementById("contentCount");
+  const contentError = document.getElementById("contentError");
+  const contentFileInput = document.getElementById("contentFileInput");
+  const clearContentBtn = document.getElementById("clearContentBtn");
+  const seedInput = document.getElementById("seedInput");
+  const seedError = document.getElementById("seedError");
+  const resetFormLink = document.getElementById("resetFormLink");
 
   const lightbox = document.getElementById("lightbox");
+  const lightboxDialog = document.getElementById("lightboxDialog");
   const lightboxImg = document.getElementById("lightboxImg");
   const lightboxClose = document.getElementById("lightboxClose");
   const lightboxPrev = document.getElementById("lightboxPrev");
   const lightboxNext = document.getElementById("lightboxNext");
   const lightboxDownload = document.getElementById("lightboxDownload");
+  const lightboxCounter = document.getElementById("lightboxCounter");
   const lightboxStage = document.getElementById("lightboxStage");
   const zoomOutBtn = document.getElementById("zoomOutBtn");
   const zoomInBtn = document.getElementById("zoomInBtn");
   const zoomResetBtn = document.getElementById("zoomResetBtn");
   const zoomLevelText = document.getElementById("zoomLevelText");
-  const saveAllBtn = document.getElementById("saveAllBtn");
+  const appShell = document.querySelector(".app-shell");
 
   const pageData = window.__INDEX_PAGE_DATA || {};
   const paperPreviewMap = pageData.paperPreviewMap && typeof pageData.paperPreviewMap === "object"
@@ -34,69 +52,224 @@
   const defaultPaperPreviews = Array.isArray(pageData.defaultPaperPreviews)
     ? pageData.defaultPaperPreviews
     : [];
+  const paperDisplayNames = pageData.paperDisplayNames && typeof pageData.paperDisplayNames === "object"
+    ? pageData.paperDisplayNames
+    : {};
+  const maxContentChars = Number.isFinite(Number(pageData.maxContentChars))
+    ? Number(pageData.maxContentChars)
+    : 12000;
 
-  const ZOOM_MIN = 0.3;
-  const ZOOM_MAX = 3;
+  const DRAFT_STORAGE_KEY = "handwrite-studio:draft:v2";
+  const ZOOM_MIN = 0.5;
+  const ZOOM_MAX = 4;
   const ZOOM_STEP = 0.2;
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  let progressTimer = null;
-  let progressValue = 0;
+  const generationStages = [
+    {
+      delay: 0,
+      title: "正在准备排版",
+      detail: "正在检查文字和纸张参数，请稍候。",
+    },
+    {
+      delay: 1500,
+      title: "正在计算分页",
+      detail: "正在处理换行、标点规则和页面布局。",
+    },
+    {
+      delay: 4300,
+      title: "正在渲染手写笔迹",
+      detail: "正文较长或图片较大时，这一步可能需要一些时间。",
+    },
+    {
+      delay: 8500,
+      title: "正在整理导出文件",
+      detail: "正在准备图片与 PDF，请继续保持页面打开。",
+    },
+  ];
+
+  let stageTimers = [];
+  let elapsedTimer = null;
+  let elapsedSeconds = 0;
+  let isSubmitting = false;
+
   let lightboxItems = [];
   let currentIndex = 0;
   let zoomLevel = 1;
-  let isSubmitting = false;
+  let baseImageWidth = 0;
+  let baseImageHeight = 0;
+  let previousActiveElement = null;
+  let dragState = null;
+
+  function setFormStatus(message, type, shouldFocus) {
+    if (!formStatus || !formStatusText) {
+      return;
+    }
+
+    const hasMessage = Boolean(message);
+    formStatus.hidden = !hasMessage;
+    formStatusText.textContent = message || "";
+    formStatus.classList.toggle("is-error", type !== "success");
+    formStatus.classList.toggle("is-success", type === "success");
+
+    if (hasMessage && shouldFocus) {
+      formStatus.focus({ preventScroll: true });
+      formStatus.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
+    }
+  }
+
+  function setFieldError(input, errorElement, message) {
+    if (input) {
+      if (message) {
+        input.setAttribute("aria-invalid", "true");
+      } else {
+        input.removeAttribute("aria-invalid");
+      }
+    }
+    if (errorElement) {
+      errorElement.textContent = message || "";
+      errorElement.hidden = !message;
+    }
+  }
 
   function updateContentCount() {
     if (!contentInput || !contentCount) {
       return;
     }
-    const value = contentInput.value || "";
-    contentCount.textContent = `${value.length} 字`;
+
+    const length = (contentInput.value || "").length;
+    contentCount.textContent = `${length.toLocaleString("zh-CN")} / ${maxContentChars.toLocaleString("zh-CN")}`;
+    contentCount.classList.toggle("is-near-limit", length >= maxContentChars * 0.85 && length < maxContentChars);
+    contentCount.classList.toggle("is-at-limit", length >= maxContentChars);
+
+    if (length > 0 && length <= maxContentChars) {
+      setFieldError(contentInput, contentError, "");
+    }
+  }
+
+  function collectDraft() {
+    if (!generateForm) {
+      return {};
+    }
+
+    const draft = {};
+    generateForm.querySelectorAll("input[name], select[name], textarea[name]").forEach((field) => {
+      if (field.type !== "file") {
+        draft[field.name] = field.value;
+      }
+    });
+    return draft;
+  }
+
+  function persistDraft() {
+    try {
+      window.sessionStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(collectDraft()));
+    } catch (error) {
+      console.warn("无法保存表单草稿:", error);
+    }
+  }
+
+  function clearDraft() {
+    try {
+      window.sessionStorage.removeItem(DRAFT_STORAGE_KEY);
+    } catch (error) {
+      console.warn("无法清除表单草稿:", error);
+    }
+  }
+
+  function restoreDraft() {
+    if (!generateForm) {
+      return;
+    }
+
+    if (pageData.clearDraft) {
+      clearDraft();
+      return;
+    }
+
+    let draft;
+    try {
+      draft = JSON.parse(window.sessionStorage.getItem(DRAFT_STORAGE_KEY) || "null");
+    } catch (error) {
+      clearDraft();
+      return;
+    }
+
+    if (!draft || typeof draft !== "object") {
+      return;
+    }
+
+    Object.entries(draft).forEach(([name, value]) => {
+      if (typeof value !== "string") {
+        return;
+      }
+      const field = generateForm.elements.namedItem(name);
+      if (!field || field.type === "file") {
+        return;
+      }
+      if (field.tagName === "SELECT" && !Array.from(field.options).some((option) => option.value === value)) {
+        return;
+      }
+      field.value = value;
+    });
   }
 
   function getPaperPreviewItems() {
-    const selectedType = paperTypeSelect ? (paperTypeSelect.value || "") : "";
+    const selectedType = paperTypeSelect ? paperTypeSelect.value : "";
     const selectedItems = paperPreviewMap[selectedType];
     if (Array.isArray(selectedItems) && selectedItems.length) {
-      return selectedItems;
+      return selectedItems.filter((item) => item && item.url);
     }
-    if (Array.isArray(defaultPaperPreviews) && defaultPaperPreviews.length) {
-      return defaultPaperPreviews;
+    return defaultPaperPreviews.filter((item) => item && item.url);
+  }
+
+  function updateSelectedPaperName() {
+    if (!selectedPaperName || !paperTypeSelect) {
+      return;
     }
-    return [];
+    const selectedOption = paperTypeSelect.options[paperTypeSelect.selectedIndex];
+    selectedPaperName.textContent = paperDisplayNames[paperTypeSelect.value]
+      || (selectedOption ? selectedOption.textContent.trim() : paperTypeSelect.value);
   }
 
   function buildPaperPreviewCard(item, index) {
     const article = document.createElement("article");
-    article.className = "image-item";
+    article.className = "image-item preview-item";
 
     const button = document.createElement("button");
     button.type = "button";
     button.className = "thumb-btn";
-    button.setAttribute("data-src", item.url || "");
+    button.dataset.src = item.url || "";
+    button.dataset.label = item.label || `纸张 ${index + 1}`;
     button.setAttribute("aria-label", `查看纸张${item.label || index + 1}大图`);
 
     const image = document.createElement("img");
     image.className = "thumb-img";
     image.src = item.url || "";
     image.alt = `纸张${item.label || index + 1}预览`;
-    image.loading = "lazy";
+    image.loading = index === 0 ? "eager" : "lazy";
+    image.decoding = "async";
+
+    const zoomHint = document.createElement("span");
+    zoomHint.className = "zoom-hint";
+    zoomHint.setAttribute("aria-hidden", "true");
+    zoomHint.textContent = "放大";
 
     const meta = document.createElement("div");
     meta.className = "thumb-meta";
 
     const label = document.createElement("p");
-    label.textContent = item.label || `第 ${index + 1} 页`;
+    label.textContent = item.label || `第 ${index + 1} 面`;
+
+    button.append(image, zoomHint);
     meta.appendChild(label);
-
-    button.appendChild(image);
-    article.appendChild(button);
-    article.appendChild(meta);
-
+    article.append(button, meta);
     return article;
   }
 
   function renderPaperPreview() {
+    updateSelectedPaperName();
+
     if (!paperPreviewGrid || !paperPreviewEmpty) {
       return;
     }
@@ -104,79 +277,142 @@
     const items = getPaperPreviewItems();
     paperPreviewGrid.textContent = "";
 
-    if (!items.length) {
-      paperPreviewGrid.hidden = true;
-      paperPreviewEmpty.hidden = false;
-      return;
-    }
-
     items.forEach((item, index) => {
-      if (!item || !item.url) {
-        return;
+      const card = buildPaperPreviewCard(item, index);
+      if (!reduceMotion) {
+        card.style.animation = `revealUp 0.38s ease ${index * 0.05}s both`;
       }
-      paperPreviewGrid.appendChild(buildPaperPreviewCard(item, index));
+      paperPreviewGrid.appendChild(card);
     });
 
     const hasCards = paperPreviewGrid.childElementCount > 0;
     paperPreviewGrid.hidden = !hasCards;
     paperPreviewEmpty.hidden = hasCards;
-
-    if (hasCards) {
-      const cards = paperPreviewGrid.querySelectorAll(".image-item");
-      cards.forEach((card, index) => {
-        card.style.animation = `revealUp 0.4s ease ${index * 0.04}s both`;
-      });
+    if (paperSideCount) {
+      paperSideCount.textContent = hasCards ? `${paperPreviewGrid.childElementCount} 个页面` : "";
     }
   }
 
-  function startLoadingAnimation() {
-    if (!generationPreview || !loadingFill || !loadingPercent) {
-      return;
+  function validateForm() {
+    let firstInvalidField = null;
+    const content = contentInput ? contentInput.value.trim() : "";
+    const seed = seedInput ? seedInput.value.trim() : "";
+
+    setFieldError(contentInput, contentError, "");
+    setFieldError(seedInput, seedError, "");
+
+    if (!content) {
+      setFieldError(contentInput, contentError, "请输入会议正文后再生成。这个字段不能为空。");
+      firstInvalidField = contentInput;
+    } else if (content.length > maxContentChars) {
+      setFieldError(contentInput, contentError, `正文最多允许 ${maxContentChars.toLocaleString("zh-CN")} 个字符。`);
+      firstInvalidField = contentInput;
     }
 
-    progressValue = 7;
-    loadingFill.style.width = `${progressValue}%`;
-    loadingPercent.textContent = `${progressValue}%`;
-
-    generationPreview.classList.add("show");
-    generationPreview.setAttribute("aria-hidden", "false");
-
-    if (progressTimer) {
-      window.clearInterval(progressTimer);
-    }
-
-    progressTimer = window.setInterval(() => {
-      const cap = 94;
-      if (progressValue >= cap) {
-        return;
+    if (seed && !/^[+-]?\d+$/.test(seed)) {
+      setFieldError(seedInput, seedError, "随机种子必须是整数，例如 42 或 -7。");
+      const details = seedInput ? seedInput.closest("details") : null;
+      if (details) {
+        details.open = true;
       }
-      const remain = cap - progressValue;
-      const step = Math.max(1, Math.ceil(remain * (0.08 + Math.random() * 0.08)));
-      progressValue = Math.min(cap, progressValue + step);
-      loadingFill.style.width = `${progressValue}%`;
-      loadingPercent.textContent = `${progressValue}%`;
-    }, 340);
-  }
-
-  function stopLoadingAnimation() {
-    if (progressTimer) {
-      window.clearInterval(progressTimer);
-      progressTimer = null;
+      if (!firstInvalidField) {
+        firstInvalidField = seedInput;
+      }
     }
 
+    if (firstInvalidField) {
+      setFormStatus("请检查标出的字段后再试。", "error", false);
+      firstInvalidField.focus();
+      firstInvalidField.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
+      return false;
+    }
+
+    setFormStatus("", "error", false);
+    return true;
+  }
+
+  function updateLoadingStage(stage) {
+    if (loadingStage) {
+      loadingStage.textContent = stage.title;
+    }
+    if (loadingDetail) {
+      loadingDetail.textContent = stage.detail;
+    }
+  }
+
+  function clearLoadingTimers() {
+    stageTimers.forEach((timer) => window.clearTimeout(timer));
+    stageTimers = [];
+    if (elapsedTimer) {
+      window.clearInterval(elapsedTimer);
+      elapsedTimer = null;
+    }
+  }
+
+  function startLoadingState() {
     if (!generationPreview) {
       return;
     }
 
+    clearLoadingTimers();
+    elapsedSeconds = 0;
+    if (loadingElapsed) {
+      loadingElapsed.textContent = "已用时 0 秒";
+    }
+
+    generationStages.forEach((stage) => {
+      const timer = window.setTimeout(() => updateLoadingStage(stage), stage.delay);
+      stageTimers.push(timer);
+    });
+
+    elapsedTimer = window.setInterval(() => {
+      elapsedSeconds += 1;
+      if (loadingElapsed) {
+        loadingElapsed.textContent = `已用时 ${elapsedSeconds} 秒`;
+      }
+    }, 1000);
+
+    generationPreview.classList.add("show");
+    generationPreview.setAttribute("aria-hidden", "false");
+
+    if (window.matchMedia("(max-width: 1120px)").matches && rightPanel) {
+      rightPanel.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+    }
+  }
+
+  function completeLoadingState() {
+    clearLoadingTimers();
+    updateLoadingStage({
+      title: "生成完成",
+      detail: "正在打开预览与下载页面。",
+    });
+  }
+
+  function stopLoadingState() {
+    clearLoadingTimers();
+    if (!generationPreview) {
+      return;
+    }
     generationPreview.classList.remove("show");
     generationPreview.setAttribute("aria-hidden", "true");
   }
 
+  function setSubmitting(submitting) {
+    isSubmitting = submitting;
+    if (!generateBtn) {
+      return;
+    }
+    generateBtn.disabled = submitting;
+    generateBtn.classList.toggle("is-loading", submitting);
+    if (generateBtnText) {
+      generateBtnText.textContent = submitting ? "正在生成，请稍候" : "开始生成";
+    }
+  }
+
   function getVisibleThumbButtons(scope) {
     const root = scope || document;
-    return Array.from(root.querySelectorAll(".thumb-btn")).filter((btn) => {
-      const src = btn.getAttribute("data-src");
-      return src && btn.offsetParent !== null;
+    return Array.from(root.querySelectorAll(".thumb-btn")).filter((button) => {
+      return Boolean(button.dataset.src) && button.offsetParent !== null;
     });
   }
 
@@ -190,48 +426,89 @@
   }
 
   function updateNavVisibility() {
-    const visible = lightboxItems.length > 1;
+    const hidden = lightboxItems.length <= 1;
     if (lightboxPrev) {
-      lightboxPrev.style.display = visible ? "flex" : "none";
+      lightboxPrev.hidden = hidden;
     }
     if (lightboxNext) {
-      lightboxNext.style.display = visible ? "flex" : "none";
+      lightboxNext.hidden = hidden;
     }
   }
 
-  function updateZoomView() {
-    if (!lightboxImg) {
+  function getStagePadding() {
+    if (!lightboxStage) {
+      return { horizontal: 0, vertical: 0 };
+    }
+    const style = window.getComputedStyle(lightboxStage);
+    return {
+      horizontal: parseFloat(style.paddingLeft) + parseFloat(style.paddingRight),
+      vertical: parseFloat(style.paddingTop) + parseFloat(style.paddingBottom),
+    };
+  }
+
+  function updateZoomView(preserveCenter) {
+    if (!lightboxImg || !baseImageWidth || !baseImageHeight) {
       return;
     }
 
-    lightboxImg.style.transform = `scale(${zoomLevel})`;
+    let centerX = 0.5;
+    let centerY = 0.5;
+    if (preserveCenter && lightboxStage) {
+      centerX = (lightboxStage.scrollLeft + lightboxStage.clientWidth / 2) / Math.max(lightboxStage.scrollWidth, 1);
+      centerY = (lightboxStage.scrollTop + lightboxStage.clientHeight / 2) / Math.max(lightboxStage.scrollHeight, 1);
+    }
+
+    lightboxImg.style.width = `${Math.round(baseImageWidth * zoomLevel)}px`;
+    lightboxImg.style.height = `${Math.round(baseImageHeight * zoomLevel)}px`;
 
     if (zoomLevelText) {
       zoomLevelText.textContent = `${Math.round(zoomLevel * 100)}%`;
     }
-
     if (zoomOutBtn) {
       zoomOutBtn.disabled = zoomLevel <= ZOOM_MIN + 0.001;
     }
-
     if (zoomInBtn) {
       zoomInBtn.disabled = zoomLevel >= ZOOM_MAX - 0.001;
+    }
+
+    if (preserveCenter && lightboxStage) {
+      window.requestAnimationFrame(() => {
+        lightboxStage.scrollLeft = centerX * lightboxStage.scrollWidth - lightboxStage.clientWidth / 2;
+        lightboxStage.scrollTop = centerY * lightboxStage.scrollHeight - lightboxStage.clientHeight / 2;
+      });
     }
   }
 
   function setZoom(nextZoom) {
     const limited = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, nextZoom));
     zoomLevel = Math.round(limited * 100) / 100;
-    updateZoomView();
+    updateZoomView(true);
+  }
+
+  function fitImageToViewport() {
+    if (!lightboxImg || !lightboxStage || !lightboxImg.naturalWidth || !lightboxImg.naturalHeight) {
+      return;
+    }
+
+    const padding = getStagePadding();
+    const availableWidth = Math.max(100, lightboxStage.clientWidth - padding.horizontal);
+    const availableHeight = Math.max(100, lightboxStage.clientHeight - padding.vertical);
+    const fitScale = Math.min(
+      availableWidth / lightboxImg.naturalWidth,
+      availableHeight / lightboxImg.naturalHeight,
+      1,
+    );
+
+    baseImageWidth = Math.max(1, Math.floor(lightboxImg.naturalWidth * fitScale));
+    baseImageHeight = Math.max(1, Math.floor(lightboxImg.naturalHeight * fitScale));
+    zoomLevel = 1;
+    updateZoomView(false);
+    lightboxStage.scrollTop = 0;
+    lightboxStage.scrollLeft = 0;
   }
 
   function resetZoom() {
-    zoomLevel = 1;
-    if (lightboxStage) {
-      lightboxStage.scrollTop = 0;
-      lightboxStage.scrollLeft = 0;
-    }
-    updateZoomView();
+    fitImageToViewport();
   }
 
   function renderLightbox(index) {
@@ -241,60 +518,40 @@
 
     currentIndex = (index + lightboxItems.length) % lightboxItems.length;
     const item = lightboxItems[currentIndex];
-    const fallbackName = `page_${currentIndex + 1}.jpg`;
+    const fallbackName = `handwrite_page_${currentIndex + 1}.jpg`;
 
-    lightboxImg.src = item.src;
-    lightboxImg.alt = item.alt || "大图预览";
+    baseImageWidth = 0;
+    baseImageHeight = 0;
+    zoomLevel = 1;
+    lightboxImg.style.width = "";
+    lightboxImg.style.height = "";
+    lightboxImg.alt = item.alt || item.label || "大图预览";
     lightboxDownload.href = item.src;
     lightboxDownload.download = getFileName(item.src, fallbackName);
-
-    // Default zoom level before image loads
-    zoomLevel = 1;
-    updateZoomView();
-
-    // After image loads, adjust zoom to fit within viewport
-    if (lightboxImg.complete) {
-      fitImageToViewport();
-    } else {
-      lightboxImg.onload = fitImageToViewport;
-    }
-  }
-
-  function fitImageToViewport() {
-    if (!lightboxImg || !lightboxStage) {
-      return;
-    }
-    const stageRect = lightboxStage.getBoundingClientRect();
-    const imgWidth = lightboxImg.naturalWidth;
-    const imgHeight = lightboxImg.naturalHeight;
-
-    if (!imgWidth || !imgHeight) {
-      return;
+    if (lightboxCounter) {
+      const label = item.label || `第 ${currentIndex + 1} 页`;
+      lightboxCounter.textContent = `${label} · ${currentIndex + 1} / ${lightboxItems.length}`;
     }
 
-    // Calculate scale to fit image within stage, with padding
-    const scaleX = (stageRect.width - 40) / imgWidth;
-    const scaleY = (stageRect.height - 40) / imgHeight;
-    const fitScale = Math.min(scaleX, scaleY, 1); // Never scale up beyond 100%
-
-    zoomLevel = Math.round(fitScale * 100) / 100;
-    if (fitScale <= 0 || !isFinite(zoomLevel)) {
-      zoomLevel = ZOOM_MIN;
+    lightboxImg.onload = () => window.requestAnimationFrame(fitImageToViewport);
+    lightboxImg.src = item.src;
+    if (lightboxImg.complete && lightboxImg.naturalWidth) {
+      window.requestAnimationFrame(fitImageToViewport);
     }
-    zoomLevel = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoomLevel));
-    updateZoomView();
+    updateNavVisibility();
   }
 
   function openLightbox(buttons, index) {
-    if (!lightbox || !buttons.length) {
+    if (!lightbox || !lightboxDialog || !buttons.length) {
       return;
     }
 
-    lightboxItems = buttons.map((btn) => {
-      const img = btn.querySelector("img");
+    lightboxItems = buttons.map((button) => {
+      const image = button.querySelector("img");
       return {
-        src: btn.getAttribute("data-src") || "",
-        alt: img ? img.alt : "大图预览",
+        src: button.dataset.src || "",
+        label: button.dataset.label || "",
+        alt: image ? image.alt : "大图预览",
       };
     }).filter((item) => item.src);
 
@@ -302,31 +559,128 @@
       return;
     }
 
-    updateNavVisibility();
-    renderLightbox(index);
+    previousActiveElement = document.activeElement;
+    lightbox.hidden = false;
+    lightbox.setAttribute("aria-hidden", "false");
     lightbox.classList.add("show");
+    document.body.classList.add("modal-open");
+    if (appShell && "inert" in appShell) {
+      appShell.inert = true;
+    }
+
+    renderLightbox(index);
+    lightboxDialog.focus({ preventScroll: true });
   }
 
   function closeLightbox() {
-    if (!lightbox || !lightboxImg) {
+    if (!lightbox || lightbox.hidden) {
       return;
     }
 
     lightbox.classList.remove("show");
-    lightboxImg.src = "";
-    resetZoom();
+    lightbox.setAttribute("aria-hidden", "true");
+    lightbox.hidden = true;
+    document.body.classList.remove("modal-open");
+    if (appShell && "inert" in appShell) {
+      appShell.inert = false;
+    }
+    if (lightboxImg) {
+      lightboxImg.onload = null;
+      lightboxImg.src = "";
+    }
+    dragState = null;
+
+    if (previousActiveElement && typeof previousActiveElement.focus === "function") {
+      previousActiveElement.focus({ preventScroll: true });
+    }
   }
 
-  function downloadBySrc(src, fallbackName) {
-    if (!src) {
+  function trapLightboxFocus(event) {
+    if (!lightboxDialog || event.key !== "Tab") {
       return;
     }
-    const link = document.createElement("a");
-    link.href = src;
-    link.download = getFileName(src, fallbackName);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const focusable = Array.from(lightboxDialog.querySelectorAll(
+      "a[href], button:not([disabled]):not([hidden]), [tabindex]:not([tabindex='-1'])",
+    )).filter((element) => element.offsetParent !== null);
+    if (!focusable.length) {
+      event.preventDefault();
+      lightboxDialog.focus();
+      return;
+    }
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  if (generateForm) {
+    restoreDraft();
+
+    generateForm.addEventListener("input", () => {
+      persistDraft();
+    });
+    generateForm.addEventListener("change", () => {
+      persistDraft();
+    });
+
+    generateForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (isSubmitting || !validateForm()) {
+        return;
+      }
+
+      persistDraft();
+      setSubmitting(true);
+      if (paperPreviewPanel) {
+        paperPreviewPanel.hidden = true;
+      }
+      if (generatedResultPanel) {
+        generatedResultPanel.hidden = true;
+      }
+      startLoadingState();
+
+      const action = generateForm.getAttribute("action") || window.location.href;
+      const method = (generateForm.getAttribute("method") || "POST").toUpperCase();
+
+      try {
+        const response = await fetch(action, {
+          method,
+          body: new FormData(generateForm),
+          credentials: "same-origin",
+          headers: {
+            "Accept": "application/json",
+            "X-Requested-With": "XMLHttpRequest",
+          },
+        });
+
+        const isJson = (response.headers.get("content-type") || "").includes("application/json");
+        const payload = isJson ? await response.json() : null;
+        if (!response.ok || (payload && payload.ok === false)) {
+          throw new Error((payload && payload.message) || `生成请求失败（HTTP ${response.status}）`);
+        }
+
+        completeLoadingState();
+        const redirectUrl = (payload && payload.redirect_url) || response.url || "/";
+        window.setTimeout(() => window.location.assign(redirectUrl), reduceMotion ? 0 : 450);
+      } catch (error) {
+        console.error("提交生成请求失败:", error);
+        setSubmitting(false);
+        stopLoadingState();
+        if (paperPreviewPanel) {
+          paperPreviewPanel.hidden = false;
+        }
+        if (generatedResultPanel) {
+          generatedResultPanel.hidden = false;
+        }
+        setFormStatus(error.message || "生成请求失败，请检查网络后重试。", "error", true);
+      }
+    });
   }
 
   if (paperTypeSelect) {
@@ -337,110 +691,80 @@
     contentInput.addEventListener("input", updateContentCount);
   }
 
-  if (generateForm) {
-    generateForm.addEventListener("submit", async (event) => {
-      if (isSubmitting) {
+  if (contentFileInput && contentInput) {
+    contentFileInput.addEventListener("change", async () => {
+      const file = contentFileInput.files && contentFileInput.files[0];
+      if (!file) {
         return;
       }
 
-      event.preventDefault();
-      isSubmitting = true;
-
-      if (generateBtn) {
-        generateBtn.disabled = true;
-        generateBtn.textContent = "生成中...";
-      }
-
-      if (paperPreviewPanel) {
-        paperPreviewPanel.hidden = true;
-      }
-      if (generatedResultPanel) {
-        generatedResultPanel.hidden = true;
-      }
-
-      startLoadingAnimation();
-      const action = generateForm.getAttribute("action") || window.location.href;
-      const method = (generateForm.getAttribute("method") || "POST").toUpperCase();
-      const formData = new FormData(generateForm);
-
       try {
-        const response = await fetch(action, {
-          method,
-          body: formData,
-          credentials: "same-origin",
-          redirect: "follow",
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+        const text = await file.text();
+        if (text.length > maxContentChars) {
+          setFormStatus(
+            `“${file.name}”共有 ${text.length.toLocaleString("zh-CN")} 个字符，超过 ${maxContentChars.toLocaleString("zh-CN")} 字上限，未导入。`,
+            "error",
+            true,
+          );
+          return;
         }
-
-        if (progressTimer) {
-          window.clearInterval(progressTimer);
-          progressTimer = null;
-        }
-        if (loadingFill && loadingPercent) {
-          loadingFill.style.width = "100%";
-          loadingPercent.textContent = "100%";
-        }
-
-        // Reload page to show new results, keeping loading animation visible briefly
-        setTimeout(() => {
-          window.location.reload();
-        }, 400);
+        contentInput.value = text;
+        updateContentCount();
+        persistDraft();
+        setFormStatus(`已导入“${file.name}”。`, "success", false);
+        contentInput.focus();
       } catch (error) {
-        console.error("提交生成请求失败:", error);
-        isSubmitting = false;
-        stopLoadingAnimation();
-
-        if (generateBtn) {
-          generateBtn.disabled = false;
-          generateBtn.textContent = "生成手写图片";
-        }
-        if (paperPreviewPanel) {
-          paperPreviewPanel.hidden = false;
-        }
-        if (generatedResultPanel) {
-          generatedResultPanel.hidden = false;
-        }
-
-        window.alert("生成请求失败，请检查网络或稍后重试。");
+        setFormStatus("无法读取该文件，请确认它是 UTF-8 编码的 TXT 文本。", "error", true);
+      } finally {
+        contentFileInput.value = "";
       }
+    });
+  }
+
+  if (clearContentBtn && contentInput) {
+    clearContentBtn.addEventListener("click", () => {
+      if (contentInput.value && !window.confirm("确定清空当前正文吗？此操作无法撤销。")) {
+        return;
+      }
+      contentInput.value = "";
+      updateContentCount();
+      persistDraft();
+      contentInput.focus();
+    });
+  }
+
+  if (resetFormLink) {
+    resetFormLink.addEventListener("click", (event) => {
+      if (!window.confirm("确定清空当前会议信息和正文，重新开始吗？")) {
+        event.preventDefault();
+        return;
+      }
+      clearDraft();
     });
   }
 
   document.addEventListener("click", (event) => {
-    const thumbBtn = event.target.closest(".thumb-btn");
-    if (!thumbBtn) {
+    const thumbButton = event.target.closest(".thumb-btn");
+    if (!thumbButton) {
       return;
     }
-
-    const sourcePanel = thumbBtn.closest(".images-grid");
+    const sourcePanel = thumbButton.closest(".images-grid");
     const buttons = getVisibleThumbButtons(sourcePanel || document);
-    const index = buttons.indexOf(thumbBtn);
-    if (index < 0) {
-      return;
+    const index = buttons.indexOf(thumbButton);
+    if (index >= 0) {
+      openLightbox(buttons, index);
     }
-
-    openLightbox(buttons, index);
   });
 
   if (lightboxPrev) {
-    lightboxPrev.addEventListener("click", () => {
-      renderLightbox(currentIndex - 1);
-    });
+    lightboxPrev.addEventListener("click", () => renderLightbox(currentIndex - 1));
   }
-
   if (lightboxNext) {
-    lightboxNext.addEventListener("click", () => {
-      renderLightbox(currentIndex + 1);
-    });
+    lightboxNext.addEventListener("click", () => renderLightbox(currentIndex + 1));
   }
-
   if (lightboxClose) {
     lightboxClose.addEventListener("click", closeLightbox);
   }
-
   if (lightbox) {
     lightbox.addEventListener("click", (event) => {
       if (event.target === lightbox) {
@@ -450,74 +774,108 @@
   }
 
   if (zoomOutBtn) {
-    zoomOutBtn.addEventListener("click", () => {
-      setZoom(zoomLevel - ZOOM_STEP);
-    });
+    zoomOutBtn.addEventListener("click", () => setZoom(zoomLevel - ZOOM_STEP));
   }
-
   if (zoomInBtn) {
-    zoomInBtn.addEventListener("click", () => {
-      setZoom(zoomLevel + ZOOM_STEP);
-    });
+    zoomInBtn.addEventListener("click", () => setZoom(zoomLevel + ZOOM_STEP));
   }
-
   if (zoomResetBtn) {
     zoomResetBtn.addEventListener("click", resetZoom);
   }
 
-  if (saveAllBtn) {
-    saveAllBtn.addEventListener("click", () => {
-      const resultButtons = generatedResultPanel
-        ? getVisibleThumbButtons(generatedResultPanel)
-        : getVisibleThumbButtons(document);
+  if (lightboxStage) {
+    lightboxStage.addEventListener("wheel", (event) => {
+      if (!event.ctrlKey && !event.metaKey) {
+        return;
+      }
+      event.preventDefault();
+      setZoom(zoomLevel + (event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
+    }, { passive: false });
 
-      // Download all immediately without artificial delay
-      resultButtons.forEach((btn, index) => {
-        const src = btn.getAttribute("data-src") || "";
-        downloadBySrc(src, `page_${index + 1}.jpg`);
-      });
+    lightboxStage.addEventListener("dblclick", () => {
+      setZoom(zoomLevel > 1.05 ? 1 : 2);
     });
+
+    lightboxStage.addEventListener("pointerdown", (event) => {
+      if (event.pointerType === "touch" || event.button !== 0) {
+        return;
+      }
+      if (lightboxStage.scrollWidth <= lightboxStage.clientWidth
+          && lightboxStage.scrollHeight <= lightboxStage.clientHeight) {
+        return;
+      }
+      dragState = {
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        scrollLeft: lightboxStage.scrollLeft,
+        scrollTop: lightboxStage.scrollTop,
+      };
+      lightboxStage.setPointerCapture(event.pointerId);
+      lightboxStage.classList.add("is-dragging");
+    });
+
+    lightboxStage.addEventListener("pointermove", (event) => {
+      if (!dragState || dragState.pointerId !== event.pointerId) {
+        return;
+      }
+      lightboxStage.scrollLeft = dragState.scrollLeft - (event.clientX - dragState.x);
+      lightboxStage.scrollTop = dragState.scrollTop - (event.clientY - dragState.y);
+    });
+
+    const endDrag = (event) => {
+      if (!dragState || dragState.pointerId !== event.pointerId) {
+        return;
+      }
+      dragState = null;
+      lightboxStage.classList.remove("is-dragging");
+    };
+    lightboxStage.addEventListener("pointerup", endDrag);
+    lightboxStage.addEventListener("pointercancel", endDrag);
   }
 
   document.addEventListener("keydown", (event) => {
-    if (!lightbox || !lightbox.classList.contains("show")) {
+    if (!lightbox || lightbox.hidden) {
+      return;
+    }
+
+    trapLightboxFocus(event);
+    if (event.defaultPrevented) {
       return;
     }
 
     if (event.key === "Escape") {
       closeLightbox();
-      return;
-    }
-
-    if (event.key === "ArrowLeft") {
+    } else if (event.key === "ArrowLeft") {
+      event.preventDefault();
       renderLightbox(currentIndex - 1);
-      return;
-    }
-
-    if (event.key === "ArrowRight") {
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
       renderLightbox(currentIndex + 1);
-      return;
-    }
-
-    if (event.key === "+" || event.key === "=") {
+    } else if (event.key === "+" || event.key === "=") {
       event.preventDefault();
       setZoom(zoomLevel + ZOOM_STEP);
-      return;
-    }
-
-    if (event.key === "-" || event.key === "_") {
+    } else if (event.key === "-" || event.key === "_") {
       event.preventDefault();
       setZoom(zoomLevel - ZOOM_STEP);
-      return;
-    }
-
-    if (event.key === "0") {
+    } else if (event.key === "0") {
       event.preventDefault();
       resetZoom();
     }
   });
 
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    if (!lightbox || lightbox.hidden) {
+      return;
+    }
+    window.clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(fitImageToViewport, 120);
+  });
+
   renderPaperPreview();
   updateContentCount();
-  updateZoomView();
+  if (formStatus && !formStatus.hidden) {
+    formStatus.setAttribute("aria-live", "assertive");
+  }
 })();

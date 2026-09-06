@@ -29,3 +29,24 @@ default:
     left_margin: 130
     right_margin: 150
     bottom_margin: 150
+
+single_sided_18lines:
+  display_name: "单面18行纸"
+  front:
+    meta_position:
+      placeholder: {x: 0, y: 0, width: 1, height: 1}
+    bg_file: "./papers/single_sided_18lines/front.jpg"
+    start_y: 625
+    line_spacing: 193
+    font_size: 110
+    left_margin: 255
+    right_margin: 402
+    bottom_margin: 428
+  back:
+    bg_file: "./papers/single_sided_18lines/front.jpg"
+    start_y: 625
+    line_spacing: 193
+    font_size: 110
+    left_margin: 255
+    right_margin: 402
+    bottom_margin: 428

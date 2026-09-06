@@ -2,9 +2,11 @@ import os
 import random
 import secrets
 import uuid
+from datetime import date
 from pathlib import Path
+from zipfile import ZIP_STORED, ZipFile
 
-from flask import Flask, abort, redirect, render_template, request, send_from_directory, session, url_for
+from flask import Flask, abort, jsonify, redirect, render_template, request, send_from_directory, session, url_for
 
 from handwrite import (
     DEFAULT_PAPER_TYPE,
@@ -42,10 +44,8 @@ SESSION_FIELD_LIMITS = {
     "attendees": 256,
     "paper_type": 64,
     "seed": 32,
-    "content": 900,
     "output_format": 4,
 }
-SESSION_PAYLOAD_MAX_BYTES = 2800
 
 
 def _get_int_env(name, default, minimum=1):
@@ -63,6 +63,16 @@ def _get_int_env(name, default, minimum=1):
 
 MAX_CONTENT_CHARS = _get_int_env("MAX_CONTENT_CHARS", MAX_CONTENT_CHARS, minimum=100)
 MAX_GENERATED_PAGES = _get_int_env("MAX_GENERATED_PAGES", MAX_GENERATED_PAGES, minimum=1)
+
+
+def _get_static_version():
+    """根据前端资源修改时间生成缓存版本号。"""
+    asset_paths = (
+        BASE_DIR / "static" / "css" / "index.css",
+        BASE_DIR / "static" / "js" / "index.js",
+    )
+    mtimes = [path.stat().st_mtime_ns for path in asset_paths if path.exists()]
+    return str(max(mtimes, default=0))
 
 
 def _load_secret_key():
@@ -133,6 +143,23 @@ def _get_paper_options(config):
     return paper_types, configured_default, presets
 
 
+def _paper_display_name(paper_type, preset):
+    display_name = preset.get("display_name") if isinstance(preset, dict) else None
+    if isinstance(display_name, str) and display_name.strip():
+        return display_name.strip()
+    return paper_type.replace("_", " ").replace("-", " ")
+
+
+def _build_paper_select_options(paper_types, presets):
+    return [
+        {
+            "value": paper_type,
+            "label": _paper_display_name(paper_type, presets.get(paper_type, {})),
+        }
+        for paper_type in paper_types
+    ]
+
+
 def _resolve_paper_asset_url(path_value):
     """将纸张资源路径解析为可访问 URL；失败返回空字符串"""
     if not isinstance(path_value, str) or not path_value.strip():
@@ -166,8 +193,9 @@ def _build_paper_preview_items(presets):
         back_url = _resolve_paper_asset_url(preset.get("back", {}).get("bg_file"))
 
         if front_url:
-            items.append({"label": "正面", "url": front_url})
-        if back_url:
+            front_label = "单面" if back_url == front_url else "正面"
+            items.append({"label": front_label, "url": front_url})
+        if back_url and back_url != front_url:
             items.append({"label": "背面", "url": back_url})
 
         # 兼容旧配置：如果 front/back 都无效，再尝试单独 preview_file
@@ -182,10 +210,12 @@ def _build_paper_preview_items(presets):
     return preview_items
 
 
-def _render_index(images=None, form_data=None, error=None, pdf_url=None):
+def _render_index(images=None, form_data=None, error=None, pdf_url=None, zip_url=None):
     form_data = dict(form_data or {})
+    has_saved_form = bool(form_data)
     paper_types = [DEFAULT_PAPER_TYPE]
     default_paper_type = DEFAULT_PAPER_TYPE
+    presets = {DEFAULT_PAPER_TYPE: {}}
     paper_preview_map = {}
     default_paper_previews = []
     config_error = None
@@ -199,11 +229,22 @@ def _render_index(images=None, form_data=None, error=None, pdf_url=None):
         app.logger.exception("加载 Web 配置失败")
         config_error = "配置加载失败，请检查服务器日志。"
 
+    if not has_saved_form:
+        today = date.today()
+        form_data.update({
+            "year": str(today.year),
+            "month": str(today.month),
+            "day": str(today.day),
+        })
+
     if not form_data.get("paper_type"):
         form_data["paper_type"] = default_paper_type
 
     if config_error:
         error = f"{error}（另：{config_error}）" if error else config_error
+
+    paper_options = _build_paper_select_options(paper_types, presets)
+    paper_display_names = {item["value"]: item["label"] for item in paper_options}
 
     return render_template(
         "index.html",
@@ -211,24 +252,50 @@ def _render_index(images=None, form_data=None, error=None, pdf_url=None):
         error=error,
         form_data=form_data,
         paper_types=paper_types,
+        paper_options=paper_options,
+        paper_display_names=paper_display_names,
         default_paper_type=default_paper_type,
         paper_preview_map=paper_preview_map,
         default_paper_previews=default_paper_previews,
         pdf_url=pdf_url,
+        zip_url=zip_url,
+        max_content_chars=MAX_CONTENT_CHARS,
+        static_version=_get_static_version(),
+        clear_draft=request.args.get("reset") == "1",
     )
 
 
-def _image_urls_by_prefix(output_prefix, output_format="jpg"):
+def _generated_page_sort_key(path):
+    try:
+        return 0, int(path.stem.rsplit("_page_", 1)[1])
+    except (IndexError, ValueError):
+        return 1, path.name
+
+
+def _image_paths_by_prefix(output_prefix, output_format="jpg"):
     if not isinstance(output_prefix, str) or not output_prefix.strip():
         return []
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    # 尝试指定格式，如果没有文件则回退到另一种格式
-    generated = sorted(OUTPUT_DIR.glob(f"{output_prefix}_page_*.{output_format}"))
+    image_format = "png" if output_format.lower() == "png" else "jpg"
+    generated = sorted(
+        OUTPUT_DIR.glob(f"{output_prefix}_page_*.{image_format}"),
+        key=_generated_page_sort_key,
+    )
     if not generated:
-        alt = "png" if output_format.lower() == "jpg" else "jpg"
-        generated = sorted(OUTPUT_DIR.glob(f"{output_prefix}_page_*.{alt}"))
-    return [url_for("serve_output", filename=p.name) for p in generated]
+        alt = "png" if image_format == "jpg" else "jpg"
+        generated = sorted(
+            OUTPUT_DIR.glob(f"{output_prefix}_page_*.{alt}"),
+            key=_generated_page_sort_key,
+        )
+    return generated
+
+
+def _image_urls_by_prefix(output_prefix, output_format="jpg"):
+    return [
+        url_for("serve_output", filename=path.name)
+        for path in _image_paths_by_prefix(output_prefix, output_format)
+    ]
 
 
 def _save_page_state(form_data=None, error=None, result_prefix=None, pdf_filename=None):
@@ -245,6 +312,18 @@ def _clear_page_state():
     session.pop(SESSION_PDF_FILENAME_KEY, None)
 
 
+def _generation_response(ok, message=None):
+    redirect_url = url_for("index")
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        status = 200 if ok else 422
+        return jsonify({
+            "ok": ok,
+            "message": message or "",
+            "redirect_url": redirect_url,
+        }), status
+    return redirect(redirect_url)
+
+
 def _sanitize_form_data_for_session(form_data):
     sanitized = {}
     if not isinstance(form_data, dict):
@@ -259,10 +338,6 @@ def _sanitize_form_data_for_session(form_data):
         if not value:
             continue
         sanitized[field] = value[:limit]
-
-    payload_size = len(str(sanitized).encode("utf-8"))
-    if payload_size > SESSION_PAYLOAD_MAX_BYTES and "content" in sanitized:
-        sanitized.pop("content", None)
 
     return sanitized
 
@@ -308,7 +383,10 @@ def generate_images(meta, content, paper_type=None, seed=None, output_format="jp
         app.logger.warning("PDF 生成失败，不影响图片展示", exc_info=True)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    generated = sorted(OUTPUT_DIR.glob(f"{output_prefix}_page_*.{image_format}"))
+    generated = sorted(
+        OUTPUT_DIR.glob(f"{output_prefix}_page_*.{image_format}"),
+        key=_generated_page_sort_key,
+    )
     return [p.name for p in generated], used_paper_type, output_prefix, pdf_filename
 
 
@@ -321,14 +399,21 @@ def index():
     saved_format = form_data.get("output_format", "jpg")
     images = _image_urls_by_prefix(result_prefix, output_format=saved_format)
     pdf_url = url_for("serve_output", filename=pdf_filename) if pdf_filename else None
+    zip_url = url_for("download_images_zip") if images else None
 
-    return _render_index(images=images or None, form_data=form_data, error=error, pdf_url=pdf_url)
+    return _render_index(
+        images=images or None,
+        form_data=form_data,
+        error=error,
+        pdf_url=pdf_url,
+        zip_url=zip_url,
+    )
 
 
 @app.route("/new", methods=["GET"])
 def new_generation():
     _clear_page_state()
-    return redirect(url_for("index"))
+    return redirect(url_for("index", reset="1"))
 
 
 @app.route("/generate", methods=["POST"])
@@ -337,27 +422,32 @@ def generate():
     content = request.form.get("content", "").strip()
     seed_value = request.form.get("seed", "").strip()
     paper_type = request.form.get("paper_type", "").strip() or None
-    output_format = request.form.get("output_format", "jpg").strip()
+    output_format = request.form.get("output_format", "jpg").strip().lower()
+    if output_format not in {"jpg", "png"}:
+        output_format = "jpg"
     if paper_type:
         form_data["paper_type"] = paper_type
     form_data["output_format"] = output_format
 
     if not content:
-        _save_page_state(form_data=form_data, error="会议正文不能为空。", result_prefix=None)
-        return redirect(url_for("index"))
+        message = "会议正文不能为空。"
+        _save_page_state(form_data=form_data, error=message, result_prefix=None)
+        return _generation_response(False, message)
     if len(content) > MAX_CONTENT_CHARS:
+        message = f"会议正文过长（最多 {MAX_CONTENT_CHARS} 字符）。请缩短后重试。"
         _save_page_state(
             form_data=form_data,
-            error=f"会议正文过长（最多 {MAX_CONTENT_CHARS} 字符）。请缩短后重试。",
+            error=message,
             result_prefix=None,
         )
-        return redirect(url_for("index"))
+        return _generation_response(False, message)
 
     try:
         seed = int(seed_value) if seed_value else None
     except ValueError:
-        _save_page_state(form_data=form_data, error="随机种子必须是整数。", result_prefix=None)
-        return redirect(url_for("index"))
+        message = "随机种子必须是整数。"
+        _save_page_state(form_data=form_data, error=message, result_prefix=None)
+        return _generation_response(False, message)
 
     try:
         _, used_paper_type, output_prefix, pdf_filename = generate_images(
@@ -369,15 +459,55 @@ def generate():
         )
         form_data["paper_type"] = used_paper_type
     except ValueError as exc:
-        _save_page_state(form_data=form_data, error=f"生成失败: {exc}", result_prefix=None)
-        return redirect(url_for("index"))
+        message = f"生成失败: {exc}"
+        _save_page_state(form_data=form_data, error=message, result_prefix=None)
+        return _generation_response(False, message)
     except Exception:
         app.logger.exception("生成手写图片失败")
-        _save_page_state(form_data=form_data, error="生成失败：服务端异常，请稍后重试。", result_prefix=None)
-        return redirect(url_for("index"))
+        message = "生成失败：服务端异常，请稍后重试。"
+        _save_page_state(form_data=form_data, error=message, result_prefix=None)
+        return _generation_response(False, message)
 
     _save_page_state(form_data=form_data, error=None, result_prefix=output_prefix, pdf_filename=pdf_filename)
-    return redirect(url_for("index"))
+    return _generation_response(True)
+
+
+@app.route("/download/images.zip", methods=["GET"])
+def download_images_zip():
+    output_prefix = session.get(SESSION_RESULT_PREFIX_KEY, "")
+    if not isinstance(output_prefix, str) or not output_prefix.startswith("web_"):
+        abort(404)
+
+    prefix_suffix = output_prefix.removeprefix("web_")
+    if len(prefix_suffix) != 10 or not all(char in "0123456789abcdef" for char in prefix_suffix):
+        abort(404)
+
+    form_data = session.get(SESSION_FORM_KEY, {})
+    output_format = form_data.get("output_format", "jpg") if isinstance(form_data, dict) else "jpg"
+    image_paths = _image_paths_by_prefix(output_prefix, output_format)
+    if not image_paths:
+        abort(404)
+
+    zip_filename = f"{output_prefix}_images.zip"
+    zip_path = OUTPUT_DIR / zip_filename
+    latest_image_mtime = max(path.stat().st_mtime_ns for path in image_paths)
+    if not zip_path.exists() or zip_path.stat().st_mtime_ns < latest_image_mtime:
+        temp_path = OUTPUT_DIR / f".{zip_filename}.{uuid.uuid4().hex}.tmp"
+        try:
+            with ZipFile(temp_path, "w", compression=ZIP_STORED) as archive:
+                for index, image_path in enumerate(image_paths, 1):
+                    archive.write(image_path, arcname=f"handwrite_page_{index}.{image_path.suffix.lstrip('.')}")
+            os.replace(temp_path, zip_path)
+        finally:
+            if temp_path.exists():
+                temp_path.unlink()
+
+    return send_from_directory(
+        str(OUTPUT_DIR),
+        zip_filename,
+        as_attachment=True,
+        download_name="handwrite_images.zip",
+    )
 
 
 @app.route("/output/<path:filename>", methods=["GET"])
