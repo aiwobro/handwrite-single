@@ -319,11 +319,15 @@ h1 {
 
 .form-grid {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 0;
 }
 
 .form-block {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 13px;
   padding: 22px 0;
   border-bottom: 1px solid var(--line);
@@ -521,6 +525,8 @@ input,
 select,
 textarea {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   color: var(--ink-strong);
   border: 1px solid rgba(62, 79, 84, 0.2);
   border-radius: var(--radius-sm);
@@ -538,6 +544,22 @@ select {
 
 select {
   cursor: pointer;
+}
+
+input[type="date"] {
+  display: block;
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  -webkit-min-logical-width: 0;
+}
+
+input[type="date"]::-webkit-date-and-time-value {
+  min-width: 0;
+  height: 1.5em;
+  margin: 0;
+  text-align: left;
 }
 
 textarea {
@@ -1425,6 +1447,23 @@ textarea[aria-invalid="true"] {
 
   .form-block {
     padding: 19px 0;
+  }
+
+  .meeting-block,
+  .meeting-block .field {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .meeting-block input[type="date"] {
+    width: 100%;
+    width: -webkit-fill-available;
+    min-width: 0;
+    max-width: 100%;
+    -webkit-min-logical-width: 0;
+    -webkit-appearance: none;
+    appearance: none;
   }
 
   .template-grid,
