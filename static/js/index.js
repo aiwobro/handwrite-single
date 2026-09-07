@@ -12,11 +12,11 @@
   const loadingDetail = document.getElementById("loadingDetail");
   const loadingElapsed = document.getElementById("loadingElapsed");
 
-  const paperTypeSelect = document.getElementById("paperTypeSelect");
-  const selectedPaperName = document.getElementById("selectedPaperName");
+  const paperTemplateInputs = Array.from(document.querySelectorAll("input[name='paper_type']"));
   const paperPreviewPanel = document.getElementById("paperPreviewPanel");
   const paperPreviewGrid = document.getElementById("paperPreviewGrid");
   const paperPreviewEmpty = document.getElementById("paperPreviewEmpty");
+  const paperPreviewTitle = document.getElementById("paperPreviewTitle");
   const paperSideCount = document.getElementById("paperSideCount");
   const generatedResultPanel = document.getElementById("generatedResultPanel");
   const rightPanel = document.getElementById("rightPanel");
@@ -26,9 +26,8 @@
   const contentError = document.getElementById("contentError");
   const contentFileInput = document.getElementById("contentFileInput");
   const clearContentBtn = document.getElementById("clearContentBtn");
-  const seedInput = document.getElementById("seedInput");
-  const seedError = document.getElementById("seedError");
   const resetFormLink = document.getElementById("resetFormLink");
+  const regenerateVariantBtn = document.getElementById("regenerateVariantBtn");
 
   const lightbox = document.getElementById("lightbox");
   const lightboxDialog = document.getElementById("lightboxDialog");
@@ -154,9 +153,10 @@
 
     const draft = {};
     generateForm.querySelectorAll("input[name], select[name], textarea[name]").forEach((field) => {
-      if (field.type !== "file") {
-        draft[field.name] = field.value;
+      if (field.type === "file" || (field.type === "radio" && !field.checked)) {
+        return;
       }
+      draft[field.name] = field.value;
     });
     return draft;
   }
@@ -199,23 +199,54 @@
       return;
     }
 
+    if (!draft.meeting_date && draft.year && draft.month && draft.day) {
+      const year = String(draft.year).padStart(4, "0");
+      const month = String(draft.month).padStart(2, "0");
+      const day = String(draft.day).padStart(2, "0");
+      draft.meeting_date = `${year}-${month}-${day}`;
+    }
+
     Object.entries(draft).forEach(([name, value]) => {
       if (typeof value !== "string") {
         return;
       }
-      const field = generateForm.elements.namedItem(name);
-      if (!field || field.type === "file") {
+      const fields = Array.from(generateForm.querySelectorAll("input[name], select[name], textarea[name]"))
+        .filter((field) => field.name === name);
+      if (!fields.length || fields[0].type === "file") {
         return;
       }
-      if (field.tagName === "SELECT" && !Array.from(field.options).some((option) => option.value === value)) {
+      if (fields[0].type === "radio") {
+        const matchingField = fields.find((field) => field.value === value);
+        if (matchingField) {
+          fields.forEach((field) => {
+            field.checked = field === matchingField;
+          });
+        }
         return;
       }
-      field.value = value;
+      if (fields[0].tagName === "SELECT"
+          && !Array.from(fields[0].options).some((option) => option.value === value)) {
+        return;
+      }
+      fields[0].value = value;
     });
   }
 
+  function getSelectedPaperInput() {
+    const selectedInput = paperTemplateInputs.find((input) => input.checked);
+    if (selectedInput) {
+      return selectedInput;
+    }
+    if (paperTemplateInputs[0]) {
+      paperTemplateInputs[0].checked = true;
+      return paperTemplateInputs[0];
+    }
+    return null;
+  }
+
   function getPaperPreviewItems() {
-    const selectedType = paperTypeSelect ? paperTypeSelect.value : "";
+    const selectedInput = getSelectedPaperInput();
+    const selectedType = selectedInput ? selectedInput.value : "";
     const selectedItems = paperPreviewMap[selectedType];
     if (Array.isArray(selectedItems) && selectedItems.length) {
       return selectedItems.filter((item) => item && item.url);
@@ -223,13 +254,20 @@
     return defaultPaperPreviews.filter((item) => item && item.url);
   }
 
-  function updateSelectedPaperName() {
-    if (!selectedPaperName || !paperTypeSelect) {
-      return;
+  function updateSelectedPaper() {
+    const selectedInput = getSelectedPaperInput();
+    paperTemplateInputs.forEach((input) => {
+      const card = input.closest(".template-option");
+      if (card) {
+        card.classList.toggle("is-selected", input === selectedInput);
+      }
+    });
+
+    if (paperPreviewTitle && selectedInput) {
+      paperPreviewTitle.textContent = paperDisplayNames[selectedInput.value]
+        || selectedInput.dataset.displayName
+        || selectedInput.value;
     }
-    const selectedOption = paperTypeSelect.options[paperTypeSelect.selectedIndex];
-    selectedPaperName.textContent = paperDisplayNames[paperTypeSelect.value]
-      || (selectedOption ? selectedOption.textContent.trim() : paperTypeSelect.value);
   }
 
   function buildPaperPreviewCard(item, index) {
@@ -268,7 +306,7 @@
   }
 
   function renderPaperPreview() {
-    updateSelectedPaperName();
+    updateSelectedPaper();
 
     if (!paperPreviewGrid || !paperPreviewEmpty) {
       return;
@@ -296,10 +334,8 @@
   function validateForm() {
     let firstInvalidField = null;
     const content = contentInput ? contentInput.value.trim() : "";
-    const seed = seedInput ? seedInput.value.trim() : "";
 
     setFieldError(contentInput, contentError, "");
-    setFieldError(seedInput, seedError, "");
 
     if (!content) {
       setFieldError(contentInput, contentError, "请输入会议正文后再生成。这个字段不能为空。");
@@ -307,17 +343,6 @@
     } else if (content.length > maxContentChars) {
       setFieldError(contentInput, contentError, `正文最多允许 ${maxContentChars.toLocaleString("zh-CN")} 个字符。`);
       firstInvalidField = contentInput;
-    }
-
-    if (seed && !/^[+-]?\d+$/.test(seed)) {
-      setFieldError(seedInput, seedError, "随机种子必须是整数，例如 42 或 -7。");
-      const details = seedInput ? seedInput.closest("details") : null;
-      if (details) {
-        details.open = true;
-      }
-      if (!firstInvalidField) {
-        firstInvalidField = seedInput;
-      }
     }
 
     if (firstInvalidField) {
@@ -405,7 +430,8 @@
     generateBtn.disabled = submitting;
     generateBtn.classList.toggle("is-loading", submitting);
     if (generateBtnText) {
-      generateBtnText.textContent = submitting ? "正在生成，请稍候" : "开始生成";
+      const idleLabel = generateForm ? generateForm.dataset.idleLabel : "开始生成";
+      generateBtnText.textContent = submitting ? "正在生成，请稍候" : (idleLabel || "开始生成");
     }
   }
 
@@ -683,9 +709,9 @@
     });
   }
 
-  if (paperTypeSelect) {
-    paperTypeSelect.addEventListener("change", renderPaperPreview);
-  }
+  paperTemplateInputs.forEach((input) => {
+    input.addEventListener("change", renderPaperPreview);
+  });
 
   if (contentInput) {
     contentInput.addEventListener("input", updateContentCount);
@@ -733,9 +759,15 @@
     });
   }
 
+  if (regenerateVariantBtn && generateForm) {
+    regenerateVariantBtn.addEventListener("click", () => {
+      generateForm.requestSubmit();
+    });
+  }
+
   if (resetFormLink) {
     resetFormLink.addEventListener("click", (event) => {
-      if (!window.confirm("确定清空当前会议信息和正文，重新开始吗？")) {
+      if (!window.confirm("确定重置全部内容并重新开始吗？")) {
         event.preventDefault();
         return;
       }

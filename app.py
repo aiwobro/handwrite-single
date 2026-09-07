@@ -34,17 +34,13 @@ SESSION_PDF_FILENAME_KEY = "last_pdf_filename"
 MAX_CONTENT_CHARS = 12000
 MAX_GENERATED_PAGES = 20
 SESSION_FIELD_LIMITS = {
-    "year": 16,
-    "month": 16,
-    "day": 16,
+    "meeting_date": 10,
     "venue": 128,
     "meeting_title": 256,
     "chairperson": 64,
     "recorder": 64,
     "attendees": 256,
     "paper_type": 64,
-    "seed": 32,
-    "output_format": 4,
 }
 
 
@@ -102,10 +98,25 @@ app.config["SECRET_KEY"] = _load_secret_key()
 
 
 def _build_meta_from_form(form):
+    meeting_date = form.get("meeting_date", "").strip()
+    if meeting_date:
+        try:
+            parsed_date = date.fromisoformat(meeting_date)
+        except ValueError as exc:
+            raise ValueError("会议日期格式不正确，请重新选择日期。") from exc
+        year = str(parsed_date.year)
+        month = str(parsed_date.month)
+        day = str(parsed_date.day)
+    else:
+        # 兼容旧客户端提交的拆分日期字段。
+        year = form.get("year", "").strip()
+        month = form.get("month", "").strip()
+        day = form.get("day", "").strip()
+
     return {
-        "year": form.get("year", "").strip(),
-        "month": form.get("month", "").strip(),
-        "day": form.get("day", "").strip(),
+        "year": year,
+        "month": month,
+        "day": day,
         "venue": form.get("venue", "").strip(),
         "meeting_title": form.get("meeting_title", "").strip(),
         "chairperson": form.get("chairperson", "").strip(),
@@ -150,14 +161,25 @@ def _paper_display_name(paper_type, preset):
     return paper_type.replace("_", " ").replace("-", " ")
 
 
-def _build_paper_select_options(paper_types, presets):
-    return [
-        {
+def _build_paper_select_options(paper_types, presets, preview_items):
+    options = []
+    for paper_type in paper_types:
+        previews = preview_items.get(paper_type, [])
+        side_count = len(previews)
+        if side_count == 0:
+            summary = "暂无预览"
+        elif side_count == 1:
+            summary = "单面模板"
+        else:
+            summary = f"{side_count} 面模板"
+
+        options.append({
             "value": paper_type,
             "label": _paper_display_name(paper_type, presets.get(paper_type, {})),
-        }
-        for paper_type in paper_types
-    ]
+            "preview_url": previews[0]["url"] if previews else "",
+            "summary": summary,
+        })
+    return options
 
 
 def _resolve_paper_asset_url(path_value):
@@ -230,12 +252,20 @@ def _render_index(images=None, form_data=None, error=None, pdf_url=None, zip_url
         config_error = "配置加载失败，请检查服务器日志。"
 
     if not has_saved_form:
-        today = date.today()
-        form_data.update({
-            "year": str(today.year),
-            "month": str(today.month),
-            "day": str(today.day),
-        })
+        form_data["meeting_date"] = date.today().isoformat()
+    elif (
+        not form_data.get("meeting_date")
+        and any(form_data.get(field) for field in ("year", "month", "day"))
+    ):
+        try:
+            legacy_date = date(
+                int(form_data.get("year", "")),
+                int(form_data.get("month", "")),
+                int(form_data.get("day", "")),
+            )
+            form_data["meeting_date"] = legacy_date.isoformat()
+        except (TypeError, ValueError):
+            pass
 
     if not form_data.get("paper_type"):
         form_data["paper_type"] = default_paper_type
@@ -243,7 +273,7 @@ def _render_index(images=None, form_data=None, error=None, pdf_url=None, zip_url
     if config_error:
         error = f"{error}（另：{config_error}）" if error else config_error
 
-    paper_options = _build_paper_select_options(paper_types, presets)
+    paper_options = _build_paper_select_options(paper_types, presets, paper_preview_map)
     paper_display_names = {item["value"]: item["label"] for item in paper_options}
 
     return render_template(
@@ -333,8 +363,7 @@ def _sanitize_form_data_for_session(form_data):
         value = form_data.get(field, "")
         if not isinstance(value, str):
             continue
-        if field != "content":
-            value = value.strip()
+        value = value.strip()
         if not value:
             continue
         sanitized[field] = value[:limit]
@@ -342,12 +371,10 @@ def _sanitize_form_data_for_session(form_data):
     return sanitized
 
 
-def generate_images(meta, content, paper_type=None, seed=None, output_format="jpg"):
+def generate_images(meta, content, paper_type=None):
     fonts = [str(DEFAULT_FONT)]
     if not DEFAULT_FONT.exists():
         raise RuntimeError(f"字体文件不存在: {DEFAULT_FONT}")
-
-    rng = random.Random(seed) if seed is not None else random.Random()
 
     config = _load_web_config()
     used_paper_type, config_front, config_back, _ = resolve_paper_layout(
@@ -357,8 +384,8 @@ def generate_images(meta, content, paper_type=None, seed=None, output_format="jp
 
     output_prefix = f"web_{uuid.uuid4().hex[:10]}"
 
-    # 图片格式：jpg 或 png
-    image_format = "png" if output_format.lower() == "png" else "jpg"
+    # Web 端统一生成 JPG 页面；导出格式在结果区按用途提供。
+    image_format = "jpg"
 
     writer = HandWriter(
         fonts,
@@ -366,7 +393,7 @@ def generate_images(meta, content, paper_type=None, seed=None, output_format="jp
         _copy_layout_with_absolute_bg(config_back),
         debug_box=False,
         max_pages=MAX_GENERATED_PAGES,
-        rng=rng,
+        rng=random.Random(),
     )
     writer.write_meta(meta)
     if content:
@@ -396,8 +423,7 @@ def index():
     error = session.get(SESSION_ERROR_KEY)
     result_prefix = session.get(SESSION_RESULT_PREFIX_KEY)
     pdf_filename = session.get(SESSION_PDF_FILENAME_KEY)
-    saved_format = form_data.get("output_format", "jpg")
-    images = _image_urls_by_prefix(result_prefix, output_format=saved_format)
+    images = _image_urls_by_prefix(result_prefix)
     pdf_url = url_for("serve_output", filename=pdf_filename) if pdf_filename else None
     zip_url = url_for("download_images_zip") if images else None
 
@@ -420,14 +446,9 @@ def new_generation():
 def generate():
     form_data = {k: v for k, v in request.form.items()}
     content = request.form.get("content", "").strip()
-    seed_value = request.form.get("seed", "").strip()
     paper_type = request.form.get("paper_type", "").strip() or None
-    output_format = request.form.get("output_format", "jpg").strip().lower()
-    if output_format not in {"jpg", "png"}:
-        output_format = "jpg"
     if paper_type:
         form_data["paper_type"] = paper_type
-    form_data["output_format"] = output_format
 
     if not content:
         message = "会议正文不能为空。"
@@ -443,19 +464,17 @@ def generate():
         return _generation_response(False, message)
 
     try:
-        seed = int(seed_value) if seed_value else None
-    except ValueError:
-        message = "随机种子必须是整数。"
+        meta = _build_meta_from_form(request.form)
+    except ValueError as exc:
+        message = str(exc)
         _save_page_state(form_data=form_data, error=message, result_prefix=None)
         return _generation_response(False, message)
 
     try:
         _, used_paper_type, output_prefix, pdf_filename = generate_images(
-            _build_meta_from_form(request.form),
+            meta,
             content,
             paper_type=paper_type,
-            seed=seed,
-            output_format=output_format,
         )
         form_data["paper_type"] = used_paper_type
     except ValueError as exc:
@@ -482,9 +501,7 @@ def download_images_zip():
     if len(prefix_suffix) != 10 or not all(char in "0123456789abcdef" for char in prefix_suffix):
         abort(404)
 
-    form_data = session.get(SESSION_FORM_KEY, {})
-    output_format = form_data.get("output_format", "jpg") if isinstance(form_data, dict) else "jpg"
-    image_paths = _image_paths_by_prefix(output_prefix, output_format)
+    image_paths = _image_paths_by_prefix(output_prefix)
     if not image_paths:
         abort(404)
 
