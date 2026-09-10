@@ -1594,6 +1594,59 @@ textarea[aria-invalid="true"] {
   }
 }
 
+.site-footer {
+  margin-top: 30px;
+  padding: 22px 8px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-muted);
+  text-align: center;
+  font-size: 12px;
+}
+
+.site-footer nav {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+}
+
+.site-footer a,
+.info-card a,
+.info-header a,
+.header-copy > a,
+.usage-notice a {
+  color: var(--accent-dark);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.header-copy > a { font-size: 13px; }
+.form-actions .usage-notice { line-height: 1.8; }
+.info-shell { max-width: 900px; }
+.info-header {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 0 0 22px;
+}
+.info-card {
+  padding: clamp(20px, 5vw, 48px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  background: var(--paper);
+  box-shadow: var(--shadow-card);
+  line-height: 1.9;
+  overflow-wrap: anywhere;
+}
+.info-card h1 { margin: 8px 0 24px; }
+.info-card h2 { margin: 30px 0 12px; font-size: 20px; line-height: 1.5; }
+.info-card li { margin: 10px 0; }
+.info-card ul,
+.info-card ol { padding-left: 1.5em; }
+.info-lead { font-size: 17px; }
+.info-date { color: var(--ink-muted); font-size: 13px; }
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

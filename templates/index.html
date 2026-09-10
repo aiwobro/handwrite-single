@@ -4,7 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f3eee4">
-  <title>会议记录手写生成台</title>
+  <meta name="description" content="会议资料排版、打印和创意展示工具，支持纸张模板、自动分页、模拟手写效果以及 JPG、PDF 和 ZIP 导出。">
+  <title>会议资料排版台 · Handwrite Studio</title>
   <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico', v=static_version) }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css', v=static_version) }}">
 </head>
@@ -17,11 +18,12 @@
         <span class="brand-mark" aria-hidden="true">写</span>
         <div>
           <p class="brand-kicker">Handwrite Studio</p>
-          <h1>会议记录手写生成台</h1>
+          <h1>会议资料排版台</h1>
         </div>
       </div>
       <div class="header-copy">
-        <p>选择纸张、填写正文，即可自动完成分页排版与手写文件导出。</p>
+        <p>会议资料排版、打印和创意展示工具。选择纸张、填写正文，导出带模拟手写效果的文件。</p>
+        <a href="{{ url_for('public_page', page='guide') }}">首次使用？查看教程 →</a>
       </div>
     </header>
 
@@ -181,6 +183,7 @@
               <span id="generateBtnText">{% if images %}重新生成{% else %}开始生成{% endif %}</span>
             </button>
             <p>通常需要数秒，页数和正文长度会影响生成时间。</p>
+            <p class="usage-notice">请勿提交机密或敏感资料。结果链接可被知情者访问，当前无固定自动删除期限。使用前请阅读<a href="{{ url_for('public_page', page='privacy') }}">隐私政策</a>和<a href="{{ url_for('public_page', page='terms') }}">服务条款</a>。</p>
           </div>
         </form>
       </section>
@@ -294,6 +297,7 @@
         {% endif %}
       </section>
     </main>
+    {% include '_site_footer.html' %}
   </div>
 
   <div class="lightbox" id="lightbox" aria-hidden="true" hidden>

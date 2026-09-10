@@ -436,6 +436,28 @@ def index():
     )
 
 
+PUBLIC_PAGES = {
+    "guide": "使用教程",
+    "about": "关于本站",
+    "privacy": "隐私政策",
+    "terms": "服务条款",
+}
+
+
+@app.route("/info/<page>", methods=["GET"])
+def public_page(page):
+    if page not in PUBLIC_PAGES:
+        abort(404)
+    return render_template(
+        "public_page.html",
+        page=page,
+        page_title=PUBLIC_PAGES[page],
+        static_version=_get_static_version(),
+        max_content_chars=MAX_CONTENT_CHARS,
+        max_generated_pages=MAX_GENERATED_PAGES,
+    )
+
+
 @app.route("/new", methods=["GET"])
 def new_generation():
     _clear_page_state()

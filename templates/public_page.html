@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f3eee4">
+  <meta name="description" content="Handwrite Studio {{ page_title }}：了解会议资料排版、打印与创意展示工具的使用方法和服务说明。">
+  <title>{{ page_title }} · Handwrite Studio</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.ico', v=static_version) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css', v=static_version) }}">
+</head>
+<body>
+  <div class="app-shell info-shell">
+    <header class="info-header">
+      <a href="{{ url_for('index') }}">Handwrite Studio</a>
+      <a href="{{ url_for('index') }}">返回生成工具 →</a>
+    </header>
+    <main class="info-card">
+      <p class="eyebrow">网站信息</p>
+      <h1>{{ page_title }}</h1>
+      {% if page in ('privacy', 'terms') %}<p class="info-date">更新及生效日期：2026 年 9 月 10 日</p>{% endif %}
+      {% include 'info/' ~ page ~ '.html' %}
+    </main>
+    {% include '_site_footer.html' %}
+  </div>
+</body>
+</html>
