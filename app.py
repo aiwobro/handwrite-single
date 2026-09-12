@@ -96,6 +96,11 @@ def _load_secret_key():
 app = Flask(__name__)
 app.config["SECRET_KEY"] = _load_secret_key()
 
+# 管理员编辑器独立于公开生成流程；未配置密码时入口关闭。
+from template_editor import editor as template_editor_blueprint
+app.config["TEMPLATE_PROJECT_DIR"] = str(BASE_DIR)
+app.register_blueprint(template_editor_blueprint)
+
 
 def _build_meta_from_form(form):
     meeting_date = form.get("meeting_date", "").strip()

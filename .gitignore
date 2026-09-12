@@ -4,6 +4,8 @@ output/
 # 用户配置文件（模板用 config.example.yaml）
 config.yaml
 .flask_secret_key
+.template_editor.lock
+.paper-presets-*
 
 # Python
 __pycache__/

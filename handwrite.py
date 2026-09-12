@@ -3,6 +3,7 @@ import os
 import argparse
 import sys
 import copy
+import math
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 try:
@@ -70,6 +71,36 @@ LAYOUT_REQUIRED_FIELDS = (
 
 # ===========================================
 
+
+def validate_body_grid(grid, width, height, font_size):
+    """校验可选的格线布局；未设置该选项的模板不进入此逻辑。"""
+    if not isinstance(grid, dict):
+        raise ValueError("body_grid 必须是对象。")
+    region = grid.get("region")
+    if not isinstance(region, dict):
+        raise ValueError("body_grid.region 必须是正文矩形。")
+    for key in ("x", "y", "width", "height"):
+        if type(region.get(key)) is not int:
+            raise ValueError("正文区域坐标及宽高必须是整数。")
+    if (region["x"] < 0 or region["y"] < 0 or region["width"] <= 0 or region["height"] <= 0
+            or region["x"] + region["width"] > width or region["y"] + region["height"] > height):
+        raise ValueError("正文格线区域超出图片范围。")
+    rows = grid.get("rows")
+    if type(rows) is not int or not 1 <= rows <= 500:
+        raise ValueError("正文行数必须是1至500的整数。")
+    alignment = grid.get("alignment")
+    if alignment not in ("bottom", "top"):
+        raise ValueError("正文对齐方式必须是 bottom 或 top。")
+    gap = grid.get("bottom_gap")
+    if type(gap) is not int or not 0 <= gap <= 500:
+        raise ValueError("距下边线必须是0至500的整数像素。")
+    if type(font_size) is not int or font_size <= 0:
+        raise ValueError("正文格线字号必须是正整数。")
+    if font_size + (gap if alignment == "bottom" else 0) > region["height"] / rows:
+        raise ValueError("每格高度不足以容纳字号及下边距，请减少行数、字号或下边距。")
+    return grid
+
+
 class HandWriter:
     def __init__(self, font_paths, config_front, config_back, debug_box=False, max_pages=None, rng=None):
         self.font_paths = font_paths
@@ -131,11 +162,20 @@ class HandWriter:
         text_bottom = self.height - config["bottom_margin"]
         overlay.rectangle((text_left, text_top, text_right, text_bottom), outline=(0, 170, 255), width=2)
 
-        # 基线（每行起笔 y）
-        y = text_top
-        while y <= text_bottom:
-            overlay.line((text_left, y, text_right, y), fill=(180, 220, 255), width=1)
-            y += config["line_spacing"]
+        # 格线模式显示单元格边线及下缘参考线；旧模板保持起笔参考线。
+        grid = config.get("body_grid")
+        if grid:
+            region = grid["region"]
+            for row in range(grid["rows"] + 1):
+                y = region["y"] + row * region["height"] / grid["rows"]
+                overlay.line((region["x"], round(y), region["x"] + region["width"], round(y)), fill=(180, 220, 255), width=1)
+                if row > 0 and grid["alignment"] == "bottom":
+                    overlay.line((region["x"], round(y - grid["bottom_gap"]), region["x"] + region["width"], round(y - grid["bottom_gap"])), fill=(90, 180, 100), width=1)
+        else:
+            y = text_top
+            while y <= text_bottom:
+                overlay.line((text_left, y, text_right, y), fill=(180, 220, 255), width=1)
+                y += config["line_spacing"]
 
         if page_type == "front":
             meta_positions = self.config_front.get("meta_position", {})
@@ -174,18 +214,48 @@ class HandWriter:
         self.current_draw = ImageDraw.Draw(self.current_image)
         self._draw_debug_overlay(config, page_type)
 
+        self.visual_coordinates = config.get("coordinate_mode") == "visual"
         self.base_size = config["font_size"]
         self.line_height = config["line_spacing"]
         self.margin_left = config["left_margin"]
         self.margin_right = config["right_margin"]
         self.bottom_limit = self.height - config["bottom_margin"]
 
-        if current_page_index % 2 == 0:
+        if self.visual_coordinates:
+            self.bottom_limit -= self.base_size
+            self.cursor_x = self.margin_left
+        elif current_page_index % 2 == 0:
             self.cursor_x = self.margin_left + 80
         else:
             self.cursor_x = self.margin_left
 
         self.cursor_y = config["start_y"]
+        self.body_grid = None
+        if "body_grid" in config:
+            if not self.visual_coordinates:
+                raise ValueError("body_grid 仅支持 coordinate_mode: visual。")
+            self.body_grid = validate_body_grid(config["body_grid"], self.width, self.height, self.base_size)
+            region = self.body_grid["region"]
+            self.grid_row = 0
+            self.line_height = region["height"] / self.body_grid["rows"]
+            self.margin_left = region["x"]
+            self.margin_right = self.width - region["x"] - region["width"]
+            self.cursor_x = self.margin_left
+            self.cursor_y = self._grid_anchor_y(0)
+            self.bottom_limit = self._grid_anchor_y(self.body_grid["rows"] - 1)
+
+    def _grid_anchor_y(self, row):
+        grid = self.body_grid
+        region = grid["region"]
+        # 每行独立从原始区域计算，不累加舍入后的行距。
+        if grid["alignment"] == "bottom":
+            return region["y"] + (row + 1) * region["height"] / grid["rows"] - grid["bottom_gap"]
+        return region["y"] + row * region["height"] / grid["rows"]
+
+    def _has_next_body_line(self):
+        if self.body_grid:
+            return self.grid_row + 1 < self.body_grid["rows"]
+        return self.cursor_y + self.line_height <= self.bottom_limit
 
     def get_random_font(self):
         font_path = self.rng.choice(self.font_paths)
@@ -210,6 +280,9 @@ class HandWriter:
             self.rng.randint(220, 255)
         )
 
+        if self.visual_coordinates:
+            return self._draw_visual_char(char, font, ink_color)
+
         # Pillow 旧版本没有 textbbox，回退到 textsize 保持兼容性
         if hasattr(draw, "textbbox"):
             text_bbox = draw.textbbox((0, 0), char, font=font)
@@ -225,8 +298,45 @@ class HandWriter:
         img = img.rotate(angle, resample=Image.BICUBIC, expand=1)
         return img, text_width
 
+    def _draw_visual_char(self, char, font, ink_color):
+        """以共同基线绘制新模板字形，仅裁剪左右留白，保留纵向位置。
+
+        不能按每个字符的墨迹高度单独裁剪/缩放，否则句号、顿号会被
+        提到汉字顶部，破折号和引号也会丢失字体定义的相对位置。
+        """
+        reference = font.getbbox('国Ag，。！？“”（）', anchor='ls')
+        bounds = font.getbbox(char, anchor='ls')
+        padding = max(2, int(font.size * 0.08))
+        line_height = max(1, reference[3] - reference[1])
+        image = Image.new('RGBA', (max(1, bounds[2] - bounds[0]) + 2 * padding,
+                                   line_height + 2 * padding))
+        draw = ImageDraw.Draw(image)
+        draw.text((padding - bounds[0], padding - reference[1]), char,
+                  font=font, fill=ink_color, anchor='ls')
+        image = image.rotate(self.rng.uniform(-3, 3), resample=Image.BICUBIC, expand=False)
+        ink_bounds = image.getbbox()
+        if ink_bounds:
+            # 纵向仍是同一个行框，所有字符采用相同缩放比例。
+            image = image.crop((ink_bounds[0], 0, ink_bounds[2], image.height))
+            width = max(1, round(image.width * self.base_size / image.height))
+            image = image.resize((width, self.base_size), getattr(Image, 'Resampling', Image).LANCZOS)
+        else:
+            image = Image.new('RGBA', (max(1, self.base_size // 2), self.base_size))
+        # 共用字体参考区的下缘，而不是每个字各自的墨迹底部。
+        # 仅格线正文用此锚点；原 visual 模板与元数据的像素保持不变。
+        image.info["body_bottom_anchor"] = (padding + line_height) * self.base_size / (line_height + 2 * padding)
+        return image, (image.width + 2) / self.KERNING_FACTOR
+
     def _advance_line(self):
         """进入下一行，必要时自动翻页"""
+        if self.body_grid:
+            if not self._has_next_body_line():
+                self._load_new_page()
+            else:
+                self.grid_row += 1
+                self.cursor_y = self._grid_anchor_y(self.grid_row)
+                self.cursor_x = self.margin_left + self.rng.randint(0, 10)
+            return
         next_line_y = self.cursor_y + self.line_height
         if next_line_y > self.bottom_limit:
             self._load_new_page()
@@ -234,8 +344,14 @@ class HandWriter:
             self.cursor_y = next_line_y
             self.cursor_x = self.margin_left + self.rng.randint(0, 10)
 
-    def _char_paste_y(self, char, base_y):
-        """计算字符纵向粘贴位置"""
+    def _char_paste_y(self, char, base_y, glyph_image=None):
+        """计算字符纵向粘贴位置；元数据不传字形，不受正文格线影响。"""
+        if self.body_grid and glyph_image is not None:
+            if self.body_grid["alignment"] == "bottom":
+                return round(base_y - glyph_image.info["body_bottom_anchor"])
+            return round(base_y)
+        if self.visual_coordinates:
+            return base_y
         offset_y = self.rng.randint(-3, 3)
         paste_y = base_y + offset_y - int(self.base_size * 0.3)
 
@@ -281,6 +397,8 @@ class HandWriter:
             kerning_factor = self.KERNING_FACTOR
             random_jitter = self.rng.randint(-3, 3)
             advance = max(1, int(char_w * kerning_factor) + random_jitter)
+            if self.visual_coordinates:
+                advance = max(char_img.width, advance)
             glyphs.append({"char": ch, "img": char_img, "advance": advance})
             width += advance
         return {"text": token, "glyphs": glyphs, "width": width}
@@ -294,8 +412,24 @@ class HandWriter:
         for token in line_tokens:
             for glyph in token["glyphs"]:
                 char = glyph["char"]
-                paste_y = self._char_paste_y(char, self.cursor_y)
-                self.current_image.paste(glyph["img"], (x, paste_y), glyph["img"])
+                image = glyph["img"]
+                paste_y = self._char_paste_y(char, self.cursor_y, image)
+                if self.body_grid:
+                    grid = self.body_grid
+                    region = grid["region"]
+                    top = round(region["y"] + self.grid_row * region["height"] / grid["rows"])
+                    bottom = round(region["y"] + (self.grid_row + 1) * region["height"] / grid["rows"])
+                    if grid["alignment"] == "bottom":
+                        bottom -= grid["bottom_gap"]
+                    # 限制旋转、重采样产生的极细边缘，不越过格线或正文边界。
+                    crop_top = max(0, top - paste_y)
+                    crop_bottom = min(image.height, bottom - paste_y)
+                    crop_right = min(image.width, self.width - self.margin_right - x)
+                    if crop_bottom > crop_top and crop_right > 0:
+                        image = image.crop((0, crop_top, crop_right, crop_bottom))
+                        self.current_image.paste(image, (x, paste_y + crop_top), image)
+                else:
+                    self.current_image.paste(image, (x, paste_y), image)
                 x += glyph["advance"]
 
     def _find_break_pos(self, combined_tokens):
@@ -325,6 +459,21 @@ class HandWriter:
         return break_pos
 
     def write_meta(self, meta_data):
+        if not self.visual_coordinates:
+            return self._write_meta(meta_data)
+        # 每个字段可独立适配较矮的框，不再受正文行距影响。
+        size, spacing = self.base_size, self.line_height
+        try:
+            for key, text in meta_data.items():
+                box = self.config_front.get("meta_position", {}).get(key)
+                if box:
+                    self.base_size = max(4, min(size, box["height"], box["width"] - 3))
+                    self.line_height = self.base_size
+                    self._write_meta({key: text})
+        finally:
+            self.base_size, self.line_height = size, spacing
+
+    def _write_meta(self, meta_data):
         """
         写会议元信息，每个字段限制在独立矩形区域内。
         超出宽度自动换行，超出高度自动截断。
@@ -380,6 +529,8 @@ class HandWriter:
                     else:
                         paste_y = local_y + offset_y - int(self.base_size * 0.3)
 
+                    if self.visual_coordinates:
+                        paste_y = local_y
                     self.current_image.paste(char_img, (local_x, paste_y), char_img)
 
                     local_x += actual_width
@@ -474,14 +625,22 @@ class HandWriter:
             if not truncated and line_tokens:
                 flush_meta_line()
 
-    def write_text(self, text):
+    def write_text(self, text, *, single_page=False):
         """
         写正文内容（含基础国标断行规则）：
         1) 点号/右半标号尽量不排在行首；
         2) 左半标号不排在行末；
         3) 破折号“——”、省略号“……”作为不可拆分 token，不跨行拆开。
+        single_page=True 时当前页满即停止，供编辑器复用同一排版流程。
         """
         print("正在写入正文...")
+
+        def advance_line():
+            if single_page and not self._has_next_body_line():
+                return False
+            self._advance_line()
+            return True
+
         max_line_width = self.width - self.margin_right
 
         line_tokens = []
@@ -489,11 +648,14 @@ class HandWriter:
 
         tokens = self._tokenize_text(text)
         for raw_token in tokens:
+            if self.visual_coordinates:
+                max_line_width = self.width - self.margin_right
             if raw_token == '\n':
                 self._draw_line_tokens(line_tokens)
                 line_tokens = []
                 line_width = 0
-                self._advance_line()
+                if not advance_line():
+                    return
                 continue
 
             token = self._build_token(raw_token)
@@ -509,7 +671,8 @@ class HandWriter:
                 self._draw_line_tokens(line_tokens)
                 line_tokens = []
                 line_width = 0
-                self._advance_line()
+                if not advance_line():
+                    return
                 continue
 
             combined = line_tokens + [token]
@@ -519,17 +682,26 @@ class HandWriter:
             carry_line = combined[break_pos:]
 
             self._draw_line_tokens(current_line)
-            self._advance_line()
+            if not advance_line():
+                return
 
             line_tokens = carry_line
+            if self.visual_coordinates:
+                # 正反面可使用不同分辨率、字号，携带字符按新页面重新构建。
+                line_tokens = [self._build_token(t["text"]) for t in line_tokens]
+                max_line_width = self.width - self.margin_right
             line_width = sum(t["width"] for t in line_tokens)
 
             # 如果“携带到下一行”的 token 仍然超宽，分次写入（极端情况兜底）
             while line_tokens and (self.cursor_x + line_width > max_line_width):
                 first = line_tokens[0]
                 self._draw_line_tokens([first])
-                self._advance_line()
+                if not advance_line():
+                    return
                 line_tokens = line_tokens[1:]
+                if self.visual_coordinates:
+                    line_tokens = [self._build_token(t["text"]) for t in line_tokens]
+                    max_line_width = self.width - self.margin_right
                 line_width = sum(t["width"] for t in line_tokens)
 
         self._draw_line_tokens(line_tokens)
@@ -892,7 +1064,11 @@ def validate_config(config, config_front, config_back, paper_type):
             errors.append(f"`paper_type={paper_type}` 的 `{side_name}.bg_file` 必须是非空字符串。")
 
         for f in ("start_y", "line_spacing", "font_size", "left_margin", "right_margin", "bottom_margin"):
-            if f in layout and not isinstance(layout[f], int):
+            if f == "line_spacing" and "body_grid" in layout:
+                value = layout.get(f)
+                if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
+                    errors.append(f"`paper_type={paper_type}` 的 `{side_name}.{f}` 必须是有限正数。")
+            elif f in layout and not isinstance(layout[f], int):
                 errors.append(f"`paper_type={paper_type}` 的 `{side_name}.{f}` 必须是整数。")
 
         if isinstance(layout.get("line_spacing"), int) and layout["line_spacing"] <= 0:
@@ -900,10 +1076,10 @@ def validate_config(config, config_front, config_back, paper_type):
         if isinstance(layout.get("font_size"), int) and layout["font_size"] <= 0:
             errors.append(f"`paper_type={paper_type}` 的 `{side_name}.font_size` 必须大于 0。")
 
-    # front 的元数据坐标必须存在并完整
-    meta_positions = config_front.get("meta_position")
-    if not isinstance(meta_positions, dict) or not meta_positions:
-        errors.append(f"`paper_type={paper_type}` 的 `front.meta_position` 必须是非空对象。")
+    # 无会议信息的横线纸允许空字段映射。
+    meta_positions = config_front.get("meta_position", {})
+    if not isinstance(meta_positions, dict):
+        errors.append(f"`paper_type={paper_type}` 的 `front.meta_position` 必须是对象。")
         meta_positions = {}
 
     for key, box in meta_positions.items():
@@ -938,6 +1114,14 @@ def validate_config(config, config_front, config_back, paper_type):
         except Exception as e:
             errors.append(f"{cfg_name} 背景图无法读取: {bg} ({e})")
             continue
+
+        if "body_grid" in layout:
+            try:
+                if layout.get("coordinate_mode") != "visual":
+                    raise ValueError("body_grid 仅支持 coordinate_mode: visual。")
+                validate_body_grid(layout["body_grid"], w, h, layout.get("font_size"))
+            except ValueError as exc:
+                errors.append(f"{cfg_name}: {exc}")
 
         numeric_fields = ("left_margin", "right_margin", "bottom_margin", "start_y")
         if not all(isinstance(layout.get(f), int) for f in numeric_fields):

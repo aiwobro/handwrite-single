@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>管理员 · 纸张模板编辑器</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/template_editor.css', v=asset_version) }}">
+</head>
+<body data-csrf="{{ csrf }}">
+<header><h1>纸张模板编辑器</h1><a href="/" target="_blank" rel="noopener">返回生成页面</a>{% if authorized %}<button id="logout">退出管理</button>{% endif %}</header>
+<p id="status" role="status" aria-live="polite"></p>
+{% if not authorized %}
+<form id="loginForm" class="login">
+  <h2>管理员登录</h2>
+  <label>管理员密码<input type="password" id="password" autocomplete="current-password" required></label>
+  <button type="submit">登录</button>
+  <p>会话有效期为一小时。请使用 HTTPS 或本机访问。</p>
+</form>
+{% else %}
+<main>
+  <aside>
+    <section><h2>1. 纸张与图片</h2>
+      <label>模板 ID<input id="templateId" maxlength="48" placeholder="例如 meeting_book_v2" pattern="[a-z][a-z0-9_-]*"></label>
+      <label>显示名称<input id="templateName" maxlength="80" placeholder="例如 新版会议记录本"></label>
+      <label>正在编辑<select id="side"><option value="front">正面 / 首页</option><option value="back">背面 / 偶数页</option></select></label>
+      <label>上传当前面的图片<input id="imageFile" type="file" accept="image/png,image/jpeg"></label>
+      <p id="imageInfo">未上传图片</p>
+      <button id="removeBack" type="button">取消独立背面</button>
+      <p class="hint">未上传背面时重复使用正面背景。元数据仅填写在第一页；其他页仅填写正文。</p>
+    </section>
+    <section><h2>2. 标注填写区域</h2>
+      <label>字段<select id="field">
+        <option value="body">正文区域</option><option value="chairperson">主持人</option><option value="recorder">记录人</option>
+        <option value="meeting_title">会议名称</option><option value="venue">会议地点</option><option value="attendees">出席人</option>
+        <option value="year">年</option><option value="month">月</option><option value="day">日</option>
+      </select></label>
+      <div class="actions"><button id="draw" type="button">框选 / 重画</button><button id="pan" type="button">拖动画布</button><button id="deleteBox" type="button">移除选框</button></div>
+      <p id="modeHint" class="hint">选择字段后，在图上拖出填写区域。已有框可拖动，四角可缩放。</p>
+      <div class="numbers">
+        <label>X<input id="boxX" type="number" min="0" step="1"></label><label>Y<input id="boxY" type="number" min="0" step="1"></label>
+        <label>宽<input id="boxW" type="number" min="1" step="1"></label><label>高<input id="boxH" type="number" min="1" step="1"></label>
+      </div>
+      <p class="hint">坐标以原图像素为准。框的是空白填写区，不是纸上印刷的标签。方向键微调，Shift + 方向键移动10像素。</p>
+    </section>
+    <section><h2>3. 正文排版</h2>
+      <label>正文模式<select id="bodyMode"><option value="grid">按纸张格线排版（推荐）</option><option value="legacy">原起笔位置模式（兼容旧草稿）</option></select></label>
+      <div class="numbers">
+        <label>字号<input id="fontSize" type="number" min="8" max="500" step="1" value="50"></label>
+        <label>行距<input id="lineSpacing" type="number" min="0.001" step="any" value="71"></label>
+        <label><span id="rowsLabel">纸张行数</span><input id="rows" type="number" min="1" max="500" step="1" value="10"></label>
+        <label>正文对齐<select id="bodyAlignment"><option value="bottom">靠下边线</option><option value="top">靠上</option></select></label>
+        <label>距下边线（像素）<input id="bottomGap" type="number" min="0" max="500" step="1" value="2"></label>
+      </div>
+      <button id="applyRows" type="button">应用行数</button>
+      <p id="layoutHint" class="hint">按格线模式：从第一行上边线框到最后一行下边线，再填写行数。</p>
+      <p class="hint">蓝线表示格子边线；绿虚线表示字体共同下缘参考线（靠上时为行框顶部）。字体自身笔形可能略高于参考线，不会把每个字符单独底部对齐。字段框不受正文对齐方式影响。</p>
+    </section>
+    <section><h2>4. 预览与保存</h2>
+      <div class="actions"><button id="preview" type="button">试写当前面</button><button id="export" type="button">导出模板 ZIP</button><button id="save" type="button">保存为新模板</button></div>
+      <p class="hint">保存不覆盖已有模板。ZIP 包包含图片、YAML 和可再次导入的 editor.json。保存后刷新首页即可使用。</p>
+      <div class="actions"><button id="draft" type="button">下载标注草稿</button><label class="file-label">导入标注草稿<input id="importDraft" type="file" accept="application/json,.json"></label></div>
+      <p class="hint">草稿不自动上传或保存在浏览器；离开前请下载或保存。重新编辑已有模板时导入 editor.json，并使用新的模板 ID 保存。</p>
+    </section>
+  </aside>
+  <div class="workspace">
+    <div class="toolbar"><button id="zoomOut" aria-label="缩小">−</button><span id="zoomValue">100%</span><button id="zoomIn" aria-label="放大">＋</button><button id="fit">适应窗口</button><span>滚轮滚动 · Ctrl + 滚轮缩放 · 空格 + 拖动平移</span></div>
+    <div id="viewport" tabindex="0" aria-label="纸张标注画布">
+      <svg id="canvas" xmlns="http://www.w3.org/2000/svg" aria-label="可编辑纸张标注"><image id="paperImage" x="0" y="0"/><g id="overlays"></g></svg>
+      <p id="empty">请先上传当前面的纸张扫描件，再框选填写区域。</p>
+    </div>
+  </div>
+</main>
+<dialog id="previewDialog"><div class="dialog-head"><strong>真实渲染试写（固定随机种子）</strong><button id="closePreview">关闭</button></div><p>检查文字是否压线、越界；关闭后可继续微调。完整长文本仍可能换行或截断。</p><img id="previewImage" alt="当前模板试写预览"></dialog>
+{% endif %}
+<script src="{{ url_for('static', filename='js/template_grid.js', v=asset_version) }}" defer></script>
+<script src="{{ url_for('static', filename='js/template_editor.js', v=asset_version) }}" defer></script>
+</body>
+</html>
